@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>vrbrowse — minimal .vr viewer</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>vrbrowse — .vr viewer (minimal)</h1>
+    <div class="controls">
+      <label>Open .vr file: <input id="fileInput" type="file" accept=".vr,.txt"/></label>
+      <button id="loadSample">Load sample</button>
+      <span class="hint">WASD to move, Q/E up/down, mouse drag to look</span>
+    </div>
+  </header>
+
+  <main>
+    <canvas id="glcanvas"></canvas>
+  </main>
+
+  <footer>
+    <small>Supports: world background/start and view RBOX primitives.</small>
+  </footer>
+
+  <script src="js/viewer.js"></script>
+</body>
+</html>

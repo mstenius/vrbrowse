@@ -1,0 +1,22 @@
+world "sample" {
+  background 0.15 0.18 0.22
+  start v 0 1.2 6
+}
+
+object {
+  view {
+    RBOX v -1 0 -1 v 1 1 1
+  }
+}
+
+object {
+  view {
+    RBOX v 2 0 -2 v 3 0.6 -1
+  }
+}
+
+object {
+  view {
+    RBOX v -3 0 1 v -2 2 2
+  }
+}
