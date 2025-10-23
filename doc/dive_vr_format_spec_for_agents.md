@@ -4,7 +4,7 @@
 This is a generated description suited for someone implementing a basic 
 viewer for the DIVE (Distributed Interactive Virtual Environment) .vr file
 format. The description that follows was made using an LLM with the official
-`.vr` file format description `[1]` as a starting point.
+`.vr` file format description `[1]` as input.
 
 ## Purpose of the DIVE ".vr" File format
 Defines DIVE worlds and objects (geometry, appearance, behavior, hierarchy).  
