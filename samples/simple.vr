@@ -1,22 +1,32 @@
 world "sample" {
+  info "Simple sample with object/view wrappers"
   background 0.15 0.18 0.22
   start v 0 1.2 6
 }
 
 object {
+  name "box_one"
   view {
+    name "v_box_one"
+    material_index 0
     RBOX v -1 0 -1 v 1 1 1
   }
 }
 
 object {
+  name "box_two"
   view {
+    name "v_box_two"
+    material_index 0
     RBOX v 2 0 -2 v 3 0.6 -1
   }
 }
 
 object {
+  name "box_three"
   view {
+    name "v_box_three"
+    material_index 0
     RBOX v -3 0 1 v -2 2 2
   }
 }
