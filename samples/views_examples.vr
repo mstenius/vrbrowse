@@ -16,7 +16,7 @@ object {
 // 2) Axis-aligned box (RBOX)
 object {
   name "rbox_example"
-  material rgb 0.2 0.6 0.8
+  material rgb 0 0 0.8
   view {
     name "unit_box"
     material_index 0

@@ -1,5 +1,4 @@
 // Minimal WebGL .vr viewer
-// Supports: world { background R G B; start v x y z } and view { RBOX v x0 y0 z0 v x1 y1 z1 }
 
 import { emtpyScene, parseVrIntoScene } from './vrparser.js';
 import { Mat4, degToRad } from './mat4.js';
@@ -20,8 +19,6 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             if (gl) gl.viewport(0, 0, w, h);
         }
     }
-
-    // Mat4 utilities have been moved to ./mat4.js
 
     // WebGL setup
     let gl = null;
@@ -365,7 +362,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             const sx = b.size[0], sy = b.size[1], sz = b.size[2];
             M[0] *= sx; M[1] *= sx; M[2] *= sx; M[4] *= sy; M[5] *= sy; M[6] *= sy; M[8] *= sz; M[9] *= sz; M[10] *= sz;
             gl.uniformMatrix4fv(uniforms.uModel, false, M);
-            gl.uniform3fv(uniforms.uColor, new Float32Array(b.color));
+            const col = (b.color && b.color.length === 3) ? b.color : ((b.material && b.material.diffuse) ? b.material.diffuse : [128 / 255, 128 / 255, 128 / 255]);
+            gl.uniform3fv(uniforms.uColor, new Float32Array(col));
             gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
         }
 
@@ -381,7 +379,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                 const sx = c.rx * 2; const sy = c.height; const sz = c.ry * 2;
                 M[0] *= sx; M[1] *= sx; M[2] *= sx; M[4] *= sy; M[5] *= sy; M[6] *= sy; M[8] *= sz; M[9] *= sz; M[10] *= sz;
                 gl.uniformMatrix4fv(uniforms.uModel, false, M);
-                gl.uniform3fv(uniforms.uColor, new Float32Array(c.color));
+                const col = (c.color && c.color.length === 3) ? c.color : ((c.material && c.material.diffuse) ? c.material.diffuse : [128 / 255, 128 / 255, 128 / 255]);
+                gl.uniform3fv(uniforms.uColor, new Float32Array(col));
                 gl.drawElements(gl.TRIANGLES, cylIndexCount, gl.UNSIGNED_SHORT, 0);
             }
         }

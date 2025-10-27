@@ -105,6 +105,8 @@ class Parser {
     constructor(tokens) { this.tokens = tokens; this.i = 0; }
     peek(n = 0) { return this.tokens[this.i + n] || { type: 'EOF' }; }
     next() { const t = this.peek(); this.i++; return t; }
+    // convenience: check upcoming token type/value without advancing
+    peekIs(type, value) { const t = this.peek(); return t.type === type && (value === undefined || t.value === value); }
     expect(type, value) {
         const t = this.next();
         if (t.type !== type || (value !== undefined && t.value !== value)) {
@@ -196,7 +198,7 @@ class Parser {
     // Parse a 'v' vector: v number number number
     parseVector() {
         // consume optional leading 'v'
-        if (this.peek().type === 'ident' && this.peek().value === 'v') this.next();
+        if (this.peekIs('ident', 'v')) this.next();
         const xTok = this.next();
         if (xTok.type !== 'number') throw new Error('Expected number for vector X');
         const yTok = this.next();
@@ -222,9 +224,7 @@ class Parser {
                     const b = this.expect('number').value;
                     scene.world.background = [r, g, b];
                 } else if (key === 'start') {
-                    // expect 'v' then three numbers
-                    const maybeV = this.peek();
-                    if (maybeV.type === 'ident' && maybeV.value === 'v') this.next();
+                    // expect a vector (may be prefixed by 'v')
                     const vec = this.parseVector();
                     scene.world.start = vec;
                 } else {
@@ -241,13 +241,11 @@ class Parser {
         this.accept('}');
     }
 
-    parseRBox(scene) {
+    parseRBox(scene, parentObject = null, material_index = null) {
         // 'RBOX' already consumed
         // Expect optional 'v' then vec then optional 'v' then vec
-        const maybe = this.peek();
-        if (maybe.type === 'ident' && maybe.value === 'v') this.next();
+        // parse two vectors (each may be prefixed by 'v')
         const a = this.parseVector();
-        if (this.peek().type === 'ident' && this.peek().value === 'v') this.next();
         const b = this.parseVector();
 
         const x0 = a[0], y0 = a[1], z0 = a[2];
@@ -257,19 +255,18 @@ class Parser {
         const minz = Math.min(z0, z1), maxz = Math.max(z0, z1);
         const center = [(minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2];
         const size = [maxx - minx, maxy - miny, maxz - minz];
-        const color = [
-            (0.3 + (center[0] % 1 + 1) % 1 * 0.7),
-            (0.3 + (center[1] % 1 + 1) % 1 * 0.7),
-            (0.3 + (center[2] % 1 + 1) % 1 * 0.7)
-        ];
-        scene.boxes.push({ center, size, color });
+        const box = { center, size };
+        if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
+            if (material_index !== null && parentObject.materials[material_index]) box.material = parentObject.materials[material_index];
+            else box.material = parentObject.materials[0];
+        }
+        scene.boxes.push(box);
     }
 
-    parseCyl(scene) {
+    parseCyl(scene, parentObject = null, material_index = null) {
         // Accept optional leading 'v' center, then rx ry height [ratio] [PART_TOP|PART_BOTTOM]
         let center = [0, 0, 0];
-        if (this.peek().type === 'ident' && this.peek().value === 'v') {
-            this.next();
+        if (this.peekIs('ident', 'v')) {
             try { center = this.parseVector(); } catch (e) { /* ignore, leave at origin */ }
         }
 
@@ -292,13 +289,12 @@ class Parser {
         }
         this.accept(';');
 
-        // color based on center (similar heuristic used for RBOX)
-        const color = [
-            (0.3 + (center[0] % 1 + 1) % 1 * 0.7),
-            (0.3 + (center[1] % 1 + 1) % 1 * 0.7),
-            (0.3 + (center[2] % 1 + 1) % 1 * 0.7)
-        ];
-        scene.cylinders.push({ center, rx, ry, height, color });
+        const cyl = { center, rx, ry, height };
+        if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
+            if (material_index !== null && parentObject.materials[material_index]) cyl.material = parentObject.materials[material_index];
+            else cyl.material = parentObject.materials[0];
+        }
+        scene.cylinders.push(cyl);
     }
 
     parseView(scene, parentObject) {
@@ -342,8 +338,8 @@ class Parser {
                 if (t.type === 'ident') {
                     const id = this.next().value;
                     // parseView saw id
-                    if (id.toUpperCase() === 'RBOX') { this.parseRBox(scene); continue; }
-                    if (id.toUpperCase() === 'CYL') { try { this.parseCyl(scene); } catch (e) { console.warn('CYL parse error in view:', e.message); } continue; }
+                    if (id.toUpperCase() === 'RBOX') { this.parseRBox(scene, parentObject, material_index); continue; }
+                    if (id.toUpperCase() === 'CYL') { try { this.parseCyl(scene, parentObject, material_index); } catch (e) { console.warn('CYL parse error in view:', e.message); } continue; }
                     if (id.toLowerCase() === 'indexed_poly') { try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject); } catch (e) { console.warn('indexed_poly parse error in view:', e.message); } continue; }
                     if (id.toUpperCase() === 'N_LINE' || id.toUpperCase() === 'LINE') { try { this.parseLinePrimitive(scene, id.toUpperCase()); } catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); } continue; }
                     if (id.toUpperCase() === 'SPHERE') { try { this.parseSphereInView(scene); } catch (e) { console.warn('SPHERE parse error in view:', e.message); } continue; }
@@ -360,8 +356,8 @@ class Parser {
             // single-line view containing a primitive: e.g., view RBOX v ... or view CYL ...
             if (this.peek().type === 'ident') {
                 const id = this.peek().value.toUpperCase();
-                if (id === 'RBOX') { this.next(); this.parseRBox(scene); }
-                else if (id === 'CYL') { this.next(); try { this.parseCyl(scene); } catch (e) { console.warn('CYL parse error in single-line view:', e.message); } }
+                if (id === 'RBOX') { this.next(); this.parseRBox(scene, parentObject, material_index); }
+                else if (id === 'CYL') { this.next(); try { this.parseCyl(scene, parentObject, material_index); } catch (e) { console.warn('CYL parse error in single-line view:', e.message); } }
                 else if (id === 'SPHERE') { this.next(); try { this.parseSphereInView(scene); } catch (e) { console.warn('SPHERE parse error in single-line view:', e.message); } }
             }
         }
@@ -438,7 +434,6 @@ class Parser {
         // four corner positions (each may be prefixed by 'v')
         const pts = [];
         for (let i = 0; i < 4; i++) {
-            if (this.peek().type === 'ident' && this.peek().value === 'v') this.next();
             pts.push(this.parseVector());
         }
         // generate grid vertices and indices (triangles)
@@ -478,7 +473,7 @@ class Parser {
         const verts = [];
         // read vectors until '}' or until count reached
         while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
-            if (this.peek().type === 'ident' && this.peek().value === 'v') { this.next(); try { const v = this.parseVector(); verts.push(...v); } catch (e) { break; } }
+            if (this.peekIs('ident', 'v')) { try { const v = this.parseVector(); verts.push(...v); } catch (e) { break; } }
             else break;
             if (count !== null && verts.length / 3 >= count) break;
         }
@@ -784,5 +779,15 @@ export function parseVrIntoScene(theScene, text) {
         // report fatal parse error to console.error (kept minimal)
         console.error('parseVrIntoScene: fatal parse error', e && e.message);
     }
+
+    // Post-process parsed objects and ensure each object has at least one
+    // material: X11-like "GRAY" diffuse
+    theScene.objects = theScene.objects || [];
+    const x11Gray = [128 / 255, 128 / 255, 128 / 255]; // #808080
+    for (const obj of theScene.objects) {
+        obj.materials = obj.materials || [];
+        if (obj.materials.length === 0) obj.materials.push({ name: 'GRAY', diffuse: x11Gray });
+    }
+
     return theScene;
 }

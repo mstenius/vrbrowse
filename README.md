@@ -18,7 +18,13 @@ The current state is rudimentary — very basic functionality, local to a web br
 Implemented so far:
 
 - Simple 3D viewer with mouse look and WASD navigation
-- Naive parsing of the world declaration and boxes
+- Parsing of the world declaration and boxes, spheres, cylinders, etc
+- Materials started
+
+## Running
+
+To run locally, either just load the files into a web browser that supports JavaScript and WebGL or
+serve the files statically using your favourite web server and do the same.
 
 ## References
 

@@ -132,6 +132,8 @@ Three forms; each pushes one element to the object’s material vector:
    ```
 - Floats in `[0..1]`.
 - If an object lacks materials, it inherits from the nearest ancestor.
+- If no material can be found in the transitive chain of ancestors, assume: `material RGB "GRAY"`
+  (addendum to the reference file format).
 
 ### 3.2 Textures (`texture`)
 ```
