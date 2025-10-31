@@ -47,11 +47,16 @@ function tokenize(input) {
     while (i < len) {
         const ch = input[i];
         // whitespace
-        if (/\s/.test(ch)) { i++; continue; }
+        if (/\s/.test(ch)) { 
+            i++;
+            continue;
+        }
 
         // punctuation
         if (ch === '{' || ch === '}' || ch === '(' || ch === ')' || ch === ',' || ch === ';') {
-            tokens.push({ type: ch, value: ch }); i++; continue;
+            tokens.push({ type: ch, value: ch });
+            i++;
+            continue;
         }
 
         // quoted string
@@ -62,20 +67,27 @@ function tokenize(input) {
                 const cc = input[j];
                 if (cc === '\\' && j + 1 < len) {
                     // simple escape handling
-                    str += input[j + 1]; j += 2; continue;
+                    str += input[j + 1];
+                    j += 2;
+                    continue;
                 }
-                if (cc === '"') { j++; break; }
+                if (cc === '"') {
+                    j++;
+                    break;
+                }
                 str += cc; j++;
             }
             tokens.push({ type: 'string', value: str });
-            i = j; continue;
+            i = j; 
+            continue;
         }
 
         // number (int or float, with optional exponent)
         const numMatch = /^[+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?/.exec(input.slice(i));
         if (numMatch) {
             tokens.push({ type: 'number', value: parseFloat(numMatch[0]), raw: numMatch[0] });
-            i += numMatch[0].length; continue;
+            i += numMatch[0].length;
+            continue;
         }
 
         // identifier / keyword (allow hyphen in names)
@@ -84,11 +96,13 @@ function tokenize(input) {
             while (j < len && isIdent(input[j])) j++;
             const word = input.slice(i, j);
             tokens.push({ type: 'ident', value: word });
-            i = j; continue;
+            i = j;
+            continue;
         }
 
         // unknown single char: emit as symbol
-        tokens.push({ type: input[i], value: input[i] }); i++;
+        tokens.push({ type: input[i], value: input[i] });
+        i++;
     }
 
     tokens.push({ type: 'EOF' });
@@ -102,11 +116,26 @@ export function debugTokens(text) {
 
 // --- Parser -----------------------------------------------------------------
 class Parser {
-    constructor(tokens) { this.tokens = tokens; this.i = 0; }
-    peek(n = 0) { return this.tokens[this.i + n] || { type: 'EOF' }; }
-    next() { const t = this.peek(); this.i++; return t; }
+    constructor(tokens) {
+        this.tokens = tokens; this.i = 0;
+    }
+
+    peek(n = 0) {
+        return this.tokens[this.i + n] || { type: 'EOF' };
+    }
+
+    next() {
+        const t = this.peek();
+        this.i++;
+        return t;
+    }
+
     // convenience: check upcoming token type/value without advancing
-    peekIs(type, value) { const t = this.peek(); return t.type === type && (value === undefined || t.value === value); }
+    peekIs(type, value) {
+        const t = this.peek(); 
+        return t.type === type && (value === undefined || t.value === value);
+    }
+
     expect(type, value) {
         const t = this.next();
         if (t.type !== type || (value !== undefined && t.value !== value)) {
@@ -118,7 +147,10 @@ class Parser {
     // Try to consume a token, return it or null
     accept(type, value) {
         const t = this.peek();
-        if (t.type === type && (value === undefined || t.value === value)) { this.i++; return t; }
+        if (t.type === type && (value === undefined || t.value === value)) {
+            this.i++;
+            return t;
+        }
         return null;
     }
 
@@ -126,7 +158,9 @@ class Parser {
     skipValue() {
         const t = this.peek();
         if (!t) return;
-        if (t.type === 'string' || t.type === 'number') { this.next(); return; }
+        if (t.type === 'string' || t.type === 'number') {
+            this.next(); return;
+        }
         if (t.type === 'ident' && t.value === 'v') {
             // consume 'v' then three numbers if present
             this.next();
@@ -141,15 +175,21 @@ class Parser {
     }
 
     // Skip or parse tokens until matching closing brace; used for unknown blocks.
-    // If parseChildren is true we will look for known constructs (world, RBOX)
+    // If parseChildren is true we will look for known constructs (world, RBOX, ...)
     // inside the block; otherwise we just skip it.
     skipBlock(parseChildren = true, scene = null) {
         if (!this.accept('{')) return;
-        // console.debug('skipBlock enter, parseChildren=', parseChildren);
+
         while (true) {
             const t = this.peek();
+
             if (!t || t.type === 'EOF') break;
-            if (t.type === '}') { this.next(); break; }
+
+            if (t.type === '}') {
+                this.next();
+                break;
+            }
+
             if (!parseChildren) {
                 // just consume until matching brace
                 // count nested braces to skip correctly
@@ -159,7 +199,12 @@ class Parser {
                     if (!u || u.type === 'EOF') return;
                     if (u.type === '{') depth++;
                     else if (u.type === '}') {
-                        if (depth === 0) return; else depth--;
+                        if (depth === 0) {
+                            return;
+                        }
+                        else { 
+                            depth--;
+                        }
                     }
                 }
             }
@@ -168,20 +213,26 @@ class Parser {
             if (this.peek().type === 'ident') {
                 const id = this.next().value;
                 if (id.toLowerCase() === 'world') {
-                    try { this.parseWorld(scene); } catch (e) { console.warn('world parse error in block:', e.message); this.skipBlock(false); }
+                    try { this.parseWorld(scene); }
+                    catch (e) { console.warn('world parse error in block:', e.message); this.skipBlock(false); }
                     continue;
                 }
                 if (id.toUpperCase() === 'RBOX') {
-                    try { this.parseRBox(scene); } catch (e) { console.warn('RBOX parse error in block:', e.message); }
+                    try { this.parseRBox(scene); } 
+                    catch (e) { console.warn('RBOX parse error in block:', e.message); }
                     continue;
                 }
                 if (id.toLowerCase() === 'view') {
-                    try { this.parseView(scene); } catch (e) { console.warn('view parse error in block:', e.message); this.skipBlock(false); }
+                    try { this.parseView(scene); } 
+                    catch (e) { console.warn('view parse error in block:', e.message); this.skipBlock(false); }
                     continue;
                 }
 
                 // if next token is a block, recurse into it (parse children)
-                if (this.peek().type === '{') { this.skipBlock(true, scene); continue; }
+                if (this.peek().type === '{') {
+                    this.skipBlock(true, scene);
+                    continue; 
+                }
 
                 // otherwise skip a single value (string/number/vector) and continue
                 this.skipValue();
@@ -189,7 +240,10 @@ class Parser {
                 continue;
             }
 
-            if (this.peek().type === '{') { this.skipBlock(true, scene); continue; }
+            if (this.peek().type === '{') {
+                this.skipBlock(true, scene);
+                continue;
+            }
             // other tokens: just consume
             this.next();
         }
@@ -199,12 +253,16 @@ class Parser {
     parseVector() {
         // consume optional leading 'v'
         if (this.peekIs('ident', 'v')) this.next();
+
         const xTok = this.next();
         if (xTok.type !== 'number') throw new Error('Expected number for vector X');
+
         const yTok = this.next();
         if (yTok.type !== 'number') throw new Error('Expected number for vector Y');
+
         const zTok = this.next();
         if (zTok.type !== 'number') throw new Error('Expected number for vector Z');
+
         return [xTok.value, yTok.value, zTok.value];
     }
 
@@ -257,8 +315,12 @@ class Parser {
         const size = [maxx - minx, maxy - miny, maxz - minz];
         const box = { center, size };
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
-            if (material_index !== null && parentObject.materials[material_index]) box.material = parentObject.materials[material_index];
-            else box.material = parentObject.materials[0];
+            if (material_index !== null && parentObject.materials[material_index]) {
+                box.material = parentObject.materials[material_index];
+            }
+            else {
+                box.material = parentObject.materials[0];
+            }
         }
         scene.boxes.push(box);
     }
@@ -274,9 +336,11 @@ class Parser {
         const rxTok = this.peek();
         if (rxTok.type !== 'number') throw new Error('CYL expected rx number');
         const rx = this.next().value;
+
         const ryTok = this.peek();
         if (ryTok.type !== 'number') throw new Error('CYL expected ry number');
         const ry = this.next().value;
+
         const hTok = this.peek();
         if (hTok.type !== 'number') throw new Error('CYL expected height number');
         const height = this.next().value;
@@ -291,8 +355,12 @@ class Parser {
 
         const cyl = { center, rx, ry, height };
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
-            if (material_index !== null && parentObject.materials[material_index]) cyl.material = parentObject.materials[material_index];
-            else cyl.material = parentObject.materials[0];
+            if (material_index !== null && parentObject.materials[material_index]) {
+                cyl.material = parentObject.materials[material_index];
+            }
+            else {
+                cyl.material = parentObject.materials[0];
+            }
         }
         scene.cylinders.push(cyl);
     }
@@ -304,29 +372,52 @@ class Parser {
         let texture_index = null;
         while (this.peek().type === 'ident') {
             const k = this.peek().value.toLowerCase();
+
             if (k === 'name') {
                 // consume name and following string
                 this.next();
                 if (this.peek().type === 'string') this.next();
                 continue;
             }
+
             if (k === 'material_index') {
                 this.next();
-                const n = this.expect('number').value; material_index = n; continue;
+                const n = this.expect('number').value;
+                material_index = n;
+                continue;
             }
+
             if (k === 'texture_index') {
                 this.next();
-                const n = this.expect('number').value; texture_index = n; continue;
+                const n = this.expect('number').value;
+                texture_index = n;
+                continue;
             }
-            if (k === 'texture_mode') { this.next(); this.next(); continue; }
+
+            if (k === 'texture_mode') {
+                // TODO
+                this.next();
+                this.next();
+                continue;
+            }
+
             // if we hit a primitive keyword or the block-start, stop
-            if (this.peek().type === '{') break;
+            if (this.peek().type === '{') {
+                break;
+            }
+
             // If the ident is one of known primitives, stop so the following code handles them
             const up = this.peek().value.toUpperCase();
-            if (['RBOX', 'CYL', 'SPHERE', 'INDEXED_POLY', 'N_LINE', 'LINE', 'QUAD_GRID'].includes(up)) break;
+            if (['RBOX', 'CYL', 'SPHERE', 'INDEXED_POLY', 'N_LINE', 'LINE', 'QUAD_GRID'].includes(up)) {
+                break;
+            }
+
             // unknown wrapper ident: consume it and any immediate value
             this.next();
-            if (this.peek().type === 'string' || this.peek().type === 'number') this.next();
+            if (this.peek().type === 'string' || this.peek().type === 'number') {
+                this.next();
+            }
+
             continue;
         }
 
@@ -337,10 +428,22 @@ class Parser {
                 const t = this.peek();
                 if (t.type === 'ident') {
                     const id = this.next().value;
-                    // parseView saw id
-                    if (id.toUpperCase() === 'RBOX') { this.parseRBox(scene, parentObject, material_index); continue; }
-                    if (id.toUpperCase() === 'CYL') { try { this.parseCyl(scene, parentObject, material_index); } catch (e) { console.warn('CYL parse error in view:', e.message); } continue; }
-                    if (id.toLowerCase() === 'indexed_poly') { try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject); } catch (e) { console.warn('indexed_poly parse error in view:', e.message); } continue; }
+
+                    if (id.toUpperCase() === 'RBOX') {
+                        this.parseRBox(scene, parentObject, material_index);
+                        continue;
+                    }
+        
+                    if (id.toUpperCase() === 'CYL') {
+                        try { this.parseCyl(scene, parentObject, material_index); } 
+                        catch (e) { console.warn('CYL parse error in view:', e.message); } 
+                        continue;
+                    }
+                    if (id.toLowerCase() === 'indexed_poly') {
+                        try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject); } 
+                        catch (e) { console.warn('indexed_poly parse error in view:', e.message); }
+                        continue;
+                    }
                     if (id.toUpperCase() === 'N_LINE' || id.toUpperCase() === 'LINE') { try { this.parseLinePrimitive(scene, id.toUpperCase()); } catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); } continue; }
                     if (id.toUpperCase() === 'SPHERE') { try { this.parseSphereInView(scene); } catch (e) { console.warn('SPHERE parse error in view:', e.message); } continue; }
                     if (id.toUpperCase() === 'QUAD_GRID') { try { this.parseQuadGrid(scene); } catch (e) { console.warn('QUAD_GRID parse error in view:', e.message); } continue; }
