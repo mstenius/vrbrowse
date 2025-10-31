@@ -175,77 +175,27 @@ class Parser {
     }
 
     // Skip or parse tokens until matching closing brace; used for unknown blocks.
-    // If parseChildren is true we will look for known constructs (world, RBOX, ...)
-    // inside the block; otherwise we just skip it.
-    skipBlock(parseChildren = true, scene = null) {
+    // Might be discarded entirely when full parsing is implemented.
+    skipBlock() {
         if (!this.accept('{')) return;
 
         while (true) {
-            const t = this.peek();
-
-            if (!t || t.type === 'EOF') break;
-
-            if (t.type === '}') {
-                this.next();
-                break;
-            }
-
-            if (!parseChildren) {
-                // just consume until matching brace
-                // count nested braces to skip correctly
-                let depth = 0;
-                while (true) {
-                    const u = this.next();
-                    if (!u || u.type === 'EOF') return;
-                    if (u.type === '{') depth++;
-                    else if (u.type === '}') {
-                        if (depth === 0) {
-                            return;
-                        }
-                        else { 
-                            depth--;
-                        }
+            // just consume until matching brace
+            // count nested braces to skip correctly
+            let depth = 0;
+            while (true) {
+                const u = this.next();
+                if (!u || u.type === 'EOF') return;
+                if (u.type === '{') depth++;
+                else if (u.type === '}') {
+                    if (depth === 0) {
+                        return;
+                    }
+                    else { 
+                        depth--;
                     }
                 }
             }
-
-            // If parsing children, handle identifiers and nested blocks recursively
-            if (this.peek().type === 'ident') {
-                const id = this.next().value;
-                if (id.toLowerCase() === 'world') {
-                    try { this.parseWorld(scene); }
-                    catch (e) { console.warn('world parse error in block:', e.message); this.skipBlock(false); }
-                    continue;
-                }
-                if (id.toUpperCase() === 'RBOX') {
-                    try { this.parseRBox(scene); } 
-                    catch (e) { console.warn('RBOX parse error in block:', e.message); }
-                    continue;
-                }
-                if (id.toLowerCase() === 'view') {
-                    try { this.parseView(scene); } 
-                    catch (e) { console.warn('view parse error in block:', e.message); this.skipBlock(false); }
-                    continue;
-                }
-
-                // if next token is a block, recurse into it (parse children)
-                if (this.peek().type === '{') {
-                    this.skipBlock(true, scene);
-                    continue; 
-                }
-
-                // otherwise skip a single value (string/number/vector) and continue
-                this.skipValue();
-                this.accept(';');
-                continue;
-            }
-
-            if (this.peek().type === '{') {
-                this.skipBlock(true, scene);
-                continue;
-            }
-            // other tokens: just consume
-            this.next();
         }
     }
 
@@ -274,7 +224,7 @@ class Parser {
         while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
             const t = this.next();
             if (t.type === 'ident') {
-                const key = t.value.toLowerCase();
+                const key = t.value;
                 if (key === 'background') {
                     // three numbers expected
                     const r = this.expect('number').value;
@@ -287,7 +237,8 @@ class Parser {
                     scene.world.start = vec;
                 } else {
                     // unknown world property: skip a single value (string/number/vector) or a block
-                    // do NOT parse children inside world
+                    // This is just a cushion until we have all expected world properties implemented
+                    // or at least parsed.
                     if (this.peek().type === '{') this.skipBlock(false);
                     else this.skipValue();
                 }
@@ -370,36 +321,41 @@ class Parser {
         // wrapper properties may appear before the '{', e.g. name "...", material_index N, texture_index N
         let material_index = null;
         let texture_index = null;
-        while (this.peek().type === 'ident') {
-            const k = this.peek().value.toLowerCase();
 
-            if (k === 'name') {
+
+        while (this.peek().type === 'ident') {
+
+            const value = this.peek().value;
+            if (value === 'name') {
                 // consume name and following string
                 this.next();
                 if (this.peek().type === 'string') this.next();
                 continue;
             }
 
-            if (k === 'material_index') {
+            if (value === 'material_index') {
                 this.next();
                 const n = this.expect('number').value;
                 material_index = n;
                 continue;
             }
 
-            if (k === 'texture_index') {
+            if (value === 'texture_index') {
                 this.next();
                 const n = this.expect('number').value;
                 texture_index = n;
                 continue;
             }
 
-            if (k === 'texture_mode') {
-                // TODO
+            if (value === 'texture_mode') {
+                // TODO: Handle TEXTURE_DECAL, TEXTURE_MODULATE, TEXTURE_BLEND
                 this.next();
                 this.next();
                 continue;
             }
+
+            // TODO: Handle those flags that can be applied to views:
+            // visibility, wireframe, gouraud, nobackface, concave
 
             // if we hit a primitive keyword or the block-start, stop
             if (this.peek().type === '{') {
@@ -407,12 +363,12 @@ class Parser {
             }
 
             // If the ident is one of known primitives, stop so the following code handles them
-            const up = this.peek().value.toUpperCase();
-            if (['RBOX', 'CYL', 'SPHERE', 'INDEXED_POLY', 'N_LINE', 'LINE', 'QUAD_GRID'].includes(up)) {
+            if (['RBOX', 'CYL', 'SPHERE', 'indexed_poly', 'N_LINE', 'LINE', 'QUAD_GRID'].includes(this.peek().value)) {
                 break;
             }
 
             // unknown wrapper ident: consume it and any immediate value
+            // Maybe later: Fail silently or warn?
             this.next();
             if (this.peek().type === 'string' || this.peek().type === 'number') {
                 this.next();
@@ -427,41 +383,71 @@ class Parser {
             while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                 const t = this.peek();
                 if (t.type === 'ident') {
-                    const id = this.next().value;
+                    const value = this.next().value;
 
-                    if (id.toUpperCase() === 'RBOX') {
+                    if (value === 'RBOX') {
                         this.parseRBox(scene, parentObject, material_index);
-                        continue;
-                    }
-        
-                    if (id.toUpperCase() === 'CYL') {
+
+                    } else if (value === 'CYL') {
                         try { this.parseCyl(scene, parentObject, material_index); } 
                         catch (e) { console.warn('CYL parse error in view:', e.message); } 
-                        continue;
-                    }
-                    if (id.toLowerCase() === 'indexed_poly') {
+
+                    }  else if (value === 'indexed_poly') {
                         try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject); } 
                         catch (e) { console.warn('indexed_poly parse error in view:', e.message); }
-                        continue;
+
+                    } else if (value === 'N_LINE' || value === 'LINE') {
+                        try { this.parseLinePrimitive(scene, value.toUpperCase()); } 
+                        catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); }
+
+                    } else if (value === 'SPHERE') {
+                        try { this.parseSphereInView(scene); }
+                        catch (e) { console.warn('SPHERE parse error in view:', e.message); }
+
+                    } else if (value === 'QUAD_GRID') {
+                        try { this.parseQuadGrid(scene); }
+                        catch (e) { console.warn('QUAD_GRID parse error in view:', e.message); }
+
+                    } else {
+                        this.skipValue();
+                        this.accept(';');
                     }
-                    if (id.toUpperCase() === 'N_LINE' || id.toUpperCase() === 'LINE') { try { this.parseLinePrimitive(scene, id.toUpperCase()); } catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); } continue; }
-                    if (id.toUpperCase() === 'SPHERE') { try { this.parseSphereInView(scene); } catch (e) { console.warn('SPHERE parse error in view:', e.message); } continue; }
-                    if (id.toUpperCase() === 'QUAD_GRID') { try { this.parseQuadGrid(scene); } catch (e) { console.warn('QUAD_GRID parse error in view:', e.message); } continue; }
-                    // unknown view-level token: if block, skip; else skip a single value
-                    if (this.peek().type === '{') { this.skipBlock(true, scene); continue; }
-                    this.skipValue();
-                    this.accept(';');
-                } else if (t.type === '{') { this.skipBlock(true, scene); }
-                else this.next();
+
+                } else if (t.type === '{') {
+                    // unexpected block: skip
+                    // Maybe later: Fail silently or warn?
+                    this.skipBlock(false);
+
+                } else {
+                    // unexpected token: skip
+                    // Maybe later: Fail silently or warn?
+                    this.next();
+                }
             }
             this.accept('}');
-        } else {
-            // single-line view containing a primitive: e.g., view RBOX v ... or view CYL ...
-            if (this.peek().type === 'ident') {
-                const id = this.peek().value.toUpperCase();
-                if (id === 'RBOX') { this.next(); this.parseRBox(scene, parentObject, material_index); }
-                else if (id === 'CYL') { this.next(); try { this.parseCyl(scene, parentObject, material_index); } catch (e) { console.warn('CYL parse error in single-line view:', e.message); } }
-                else if (id === 'SPHERE') { this.next(); try { this.parseSphereInView(scene); } catch (e) { console.warn('SPHERE parse error in single-line view:', e.message); } }
+
+        } else if (this.peek().type === 'ident') {
+            // single-line view containing a primitive:
+            // view RBOX v ... or view CYL ...
+
+            const value = this.peek().value;
+            if (value === 'RBOX') {
+                this.next();
+                this.parseRBox(scene, parentObject, material_index);
+
+            } else if (value === 'CYL') {
+                this.next();
+                try { this.parseCyl(scene, parentObject, material_index); }
+                catch (e) { console.warn('CYL parse error in single-line view:', e.message); }
+
+            } else if (value === 'SPHERE') {
+                this.next();
+                try { this.parseSphereInView(scene); }
+                catch (e) { console.warn('SPHERE parse error in single-line view:', e.message); }
+
+            } else {
+                // else: unhandled single-line view primitive
+                this.skipValue();
             }
         }
     }
@@ -495,13 +481,22 @@ class Parser {
                 if (id === 'texture') {
                     if (this.peek().type === 'string') { obj.textures.push(this.next().value); } else this.skipValue(); continue;
                 }
-                if (id === 'view') { try { this.parseView(scene, obj); } catch (e) { console.warn('view parse error in object:', e && e.message); this.skipBlock(true); } continue; }
-                if (id === 'object') { try { this.parseObject(scene); } catch (e) { console.warn('nested object parse error:', e && e.message); this.skipBlock(true); } continue; }
-                // other known tokens: inline, lodrange etc — skip
-                if (this.peek().type === '{') { this.skipBlock(true); continue; }
+                if (id === 'view') { try { this.parseView(scene, obj); } catch (e) { console.warn('view parse error in object:', e && e.message); this.skipBlock(false); } continue; }
+                if (id === 'object') { try { this.parseObject(scene); } catch (e) { console.warn('nested object parse error:', e && e.message); this.skipBlock(false); } continue; }
+                // other known tokens: inline, lodrange etc — skip until we implement
+                if (this.peek().type === '{') { this.skipBlock(false); continue; }
                 this.skipValue(); this.accept(';');
-            } else if (this.peek().type === '{') { this.skipBlock(true); }
-            else this.next();
+
+            } else if (this.peek().type === '{') { 
+                // This is probably an error, but skip it
+                // Maybe later: Fail silently or warn?
+                this.skipBlock(false);
+
+            } else {
+                // unexpected token: skip.
+                // Maybe later: Fail silently or warn?
+                this.next();
+            }
         }
         this.accept('}');
         // attach to scene if needed (scene does not currently keep objects list, but meshes from views reference materials/textures via parentObject)
@@ -840,15 +835,15 @@ class Parser {
                 this.next();
                 // object handling falls through to block parsing
                 if (kw.toLowerCase() === 'world') {
-                    try { this.parseWorld(scene); } catch (e) { console.warn('world parse error:', e.message); this.skipBlock(true, scene); }
+                    try { this.parseWorld(scene); } catch (e) { console.warn('world parse error:', e.message); this.skipBlock(false); }
                     continue;
                 }
                 if (kw.toLowerCase() === 'object') {
-                    try { this.parseObject(scene); } catch (e) { console.warn('object parse error:', e && e.message); this.skipBlock(true, scene); }
+                    try { this.parseObject(scene); } catch (e) { console.warn('object parse error:', e && e.message); this.skipBlock(false); }
                     continue;
                 }
                 if (kw.toLowerCase() === 'view') {
-                    try { this.parseView(scene); } catch (e) { console.warn('view parse error:', e.message); this.skipBlock(true, scene); }
+                    try { this.parseView(scene); } catch (e) { console.warn('view parse error:', e.message); this.skipBlock(false); }
                     continue;
                 }
                 if (kw.toUpperCase() === 'RBOX') {
@@ -856,16 +851,25 @@ class Parser {
                     continue;
                 }
 
-                // unknown identifier: if followed by '{', skip the block, otherwise skip until semicolon
-                if (this.peek().type === '{') { this.skipBlock(true, scene); continue; }
-                // otherwise consume tokens until semicolon or newline or next top-level ident
-                while (this.peek().type !== ';' && this.peek().type !== 'EOF' && this.peek().type !== '}') this.next();
+                // unknown identifier:
+                // if followed by '{', skip the block, otherwise skip until semicolon
+                // Maybe later: Fail silently or warn?
+                if (this.peek().type === '{') {
+                    this.skipBlock(false); 
+                    continue;
+                }
+                while (this.peek().type !== ';' && this.peek().type !== 'EOF' && this.peek().type !== '}') {
+                    this.next(); 
+                }
                 this.accept(';');
+
             } else if (t.type === '{') {
                 // stray block
-                this.skipBlock(true, scene);
+                // Maybe later: Fail silently or warn?
+                this.skipBlock(false);
             } else {
                 // punctuation or unexpected token, just consume
+                // Maybe later: Fail silently or warn?
                 this.next();
             }
         }
