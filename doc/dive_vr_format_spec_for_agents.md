@@ -341,104 +341,104 @@ inline "URL"
 
 ## 6) Minimal Grammar (EBNF-style)
 ```
-File          := [WorldDecl] (ObjectNode | InlineTop)*
+Scene            := [WorldDecl] (ObjectNode | InlineTop)*
 
-WorldDecl     := 'world' String '{' WorldProp* '}'
-WorldProp     := 'start' 'v' Float Float Float
-               | 'info' String
-               | 'background' Float Float Float
-               | 'fog' Float
-               | 'terrain' URL
-               | 'color' Float Float Float
-               | 'ambient' Float Float Float
-               | 'position' Float Float Float
-               | 'far_clip' Float
-               | 'near_clip' Float
+WorldDecl        := 'world' String '{' WorldProp* '}'
+WorldProp        := 'start' 'v' Float Float Float
+                  | 'info' String
+                  | 'background' Float Float Float
+                  | 'fog' Float
+                  | 'terrain' URL
+                  | 'color' Float Float Float
+                  | 'ambient' Float Float Float
+                  | 'position' Float Float Float
+                  | 'far_clip' Float
+                  | 'near_clip' Float
 
-ObjectNode    := Object | Billboard | Lod | Switch
+ObjectNode       := Object | Billboard | Lod | Switch
 
-Object        := 'object' '{'
-                 [ 'id' Int ] [ 'name' String ]
-                 MaterialDecl* TextureDecl* FlagsDecl*
-                 [ GatewayDecl ] Transformation*
-                 PropertyDecl* MethodDecl* LightDecl*
-                 InlineDecl* [ LegacyLODDecl ]
-                 ( View | ObjectNode )*
-                 '}'
+Object           := 'object' '{'
+                    [ 'id' Int ] [ 'name' String ]
+                    MaterialDecl* TextureDecl* FlagsDecl*
+                    [ GatewayDecl ] Transformation*
+                    PropertyDecl* MethodDecl* LightDecl*
+                    InlineDecl* [ LegacyLODDecl ]
+                    ( View | ObjectNode )*
+                    '}'
 
-Billboard     := 'billboard' '{'
-                 [ 'name' String ] 'axis' Float Float Float
-                 FlagsDecl* InlineDecl* ( View | ObjectNode )*
-                 '}'
+Billboard        := 'billboard' '{'
+                    [ 'name' String ] 'axis' Float Float Float
+                    FlagsDecl* InlineDecl* ( View | ObjectNode )*
+                    '}'
 
-Lod           := 'lod' '{'
-                 [ 'name' String ]
-                 ( 'range' '{' FloatList '}' | 'angle' '{' FloatList '}' )
-                 FlagsDecl* InlineDecl* ( View | ObjectNode )*
-                 '}'
+Lod              := 'lod' '{'
+                    [ 'name' String ]
+                    ( 'range' '{' FloatList '}' | 'angle' '{' FloatList '}' )
+                    FlagsDecl* InlineDecl* ( View | ObjectNode )*
+                    '}'
 
-Switch        := 'switch' '{'
-                 [ 'name' String ] 'choice' Int
-                 FlagsDecl* InlineDecl* ( View | ObjectNode )*
-                 '}'
+Switch           := 'switch' '{'
+                    [ 'name' String ] 'choice' Int
+                    FlagsDecl* InlineDecl* ( View | ObjectNode )*
+                    '}'
 
-View          := 'view' '{'
-                 [ 'name' String ] [ 'material_index' Int ]
-                 [ 'texture_index' Int ] [ 'texture_mode' TexMode ]
-                 ViewFlags*
-                 ViewPrim
-                 '}'
+View             := 'view' '{'
+                    [ 'name' String ] [ 'material_index' Int ]
+                    [ 'texture_index' Int ] [ 'texture_mode' TexMode ]
+                    ViewFlags*
+                    ViewPrim
+                    '}'
 
-ViewPrim      := Line | NLine | RBox | NPoly | N_M_Poly | IndexedPoly
-               | Sphere | Ellipse | Cyl | QuadGrid
-               | TextView | Background
+ViewPrim         := Line | NLine | RBox | NPoly | N_M_Poly | IndexedPoly
+                  | Sphere | Ellipse | Cyl | QuadGrid
+                  | TextView | Background
 
-Line          := 'LINE' 'v' V3 'v' V3
-NLine         := 'N_LINE' Int ( 'v' V3 )+
-RBox          := 'RBOX' 'v' V3 'v' V3
-NPoly         := 'N_POLY' Int ( 'v' V3 [ 't' Float Float ] )+
-N_M_Poly      := ( 'N_M_POLY' | 'QMESH' | 'TMESH' ) Int Int Flags
-                 ( N_POLY ( [ 'm' Int ] ) )+
-IndexedPoly   := 'indexed_poly' PrimType Flags
-                 ( VertexList | NormalList | TextureList
-                   | PolyList | NormalIndexList | TextureIndexList
-                   | MaterialList | ColourList )+
-Sphere        := 'SPHERE' Float Float Float
-Ellipse       := 'ELLIPSE' Float Float
-Cyl           := 'CYL' Float Float Float [ Float [ 'PART_TOP' | 'PART_BOTTOM' ] ]
-QuadGrid      := 'QUAD_GRID' Int Int 'v' V3 'v' V3 'v' V3 'v' V3
-TextView      := ( 'TEXT' | 'LTEXT' | 'CTEXT' | 'RTEXT' ) Float String String
-Background    := 'BACKGROUND' [ 'texture_indices' Int Int Int Int Int Int ]
+Line             := 'LINE' 'v' V3 'v' V3
+NLine            := 'N_LINE' Int ( 'v' V3 )+
+RBox             := 'RBOX' 'v' V3 'v' V3
+NPoly            := 'N_POLY' Int ( 'v' V3 [ 't' Float Float ] )+
+N_M_Poly         := ( 'N_M_POLY' | 'QMESH' | 'TMESH' ) Int Int Flags
+                    ( N_POLY ( [ 'm' Int ] ) )+
+IndexedPoly      := 'indexed_poly' PrimType Flags
+                    ( VertexList | NormalList | TextureList
+                      | PolyList | NormalIndexList | TextureIndexList
+                      | MaterialList | ColourList )+
+Sphere           := 'SPHERE' Float Float Float
+Ellipse          := 'ELLIPSE' Float Float
+Cyl              := 'CYL' Float Float Float [ Float [ 'PART_TOP' | 'PART_BOTTOM' ] ]
+QuadGrid         := 'QUAD_GRID' Int Int 'v' V3 'v' V3 'v' V3 'v' V3
+TextView         := ( 'TEXT' | 'LTEXT' | 'CTEXT' | 'RTEXT' ) Float String String
+Background       := 'BACKGROUND' [ 'texture_indices' Int Int Int Int Int Int ]
 
-MaterialDecl  := 'material' ( String | 'rgb' Float Float Float | '{' MaterialProps '}' )
-TextureDecl   := 'texture' String
-FlagsDecl     := 'FLAG' FlagKey ('on'|'off') | 'set' '(' MaskExpr ')' | 'clear' '(' MaskExpr ')'
-GatewayDecl   := 'gateway' String 'v' V3
-Transformation:= 'eulerxyz' 'v' V3 | 'fixedxyz' 'v' V3
-               | 'rotation' 'v' V3 'v' V3 'v' V3 | 'translation' 'v' V3
-PropertyDecl  := 'prop' String TypeKw Value [ 'GLOBAL_PROP' ]
-MethodDecl    := 'begin.tcl' TclText 'end.tcl' | 'inline.tcl' String ( String )*
-LightDecl     := 'light' '{' [ 'name' String ] (DLight|PLight|SLight) '}'
-LegacyLODDecl := 'lodrange' '{' FloatList '}'
-InlineDecl    := 'inline' String
-InlineTop     := 'inline' String
+MaterialDecl     := 'material' ( String | 'rgb' Float Float Float | '{' MaterialProps '}' )
+TextureDecl      := 'texture' String
+FlagsDecl        := 'FLAG' FlagKey ('on'|'off') | 'set' '(' MaskExpr ')' | 'clear' '(' MaskExpr ')'
+GatewayDecl      := 'gateway' String 'v' V3
+Transformation   := 'eulerxyz' 'v' V3 | 'fixedxyz' 'v' V3
+                  | 'rotation' 'v' V3 'v' V3 'v' V3 | 'translation' 'v' V3
+PropertyDecl     := 'prop' String TypeKw Value [ 'GLOBAL_PROP' ]
+MethodDecl       := 'begin.tcl' TclText 'end.tcl' | 'inline.tcl' String ( String )*
+LightDecl        := 'light' '{' [ 'name' String ] (DLight|PLight|SLight) '}'
+LegacyLODDecl    := 'lodrange' '{' FloatList '}'
+InlineDecl       := 'inline' String
+InlineTop        := 'inline' String
 
 // Helpers
-V3            := Float Float Float
-FloatList     := Float ( [',' ] Float )*
-Flags         := ( FlagName )*               // OR-combo: C_PER_* N_PER_* T_PER_* M_PER_*
-ViewFlags     := ( 'FLAG' (visibility|wireframe|gouraud|nobackface|concave) ('on'|'off') )*
-PrimType      := 'PRIM_POINTS' | 'PRIM_LINES' | 'PRIM_POLY' | 'PRIM_TMESH' | 'PRIM_QMESH'
-TexMode       := 'TEXTURE_DECAL' | 'TEXTURE_MODULATE' | 'TEXTURE_BLEND'
-VertexList    := 'vertexlist' '{' ( V3 ',' )* V3 '}'
-NormalList    := 'normallist' '{' ( V3 ',' )* V3 '}'
-TextureList   := 'texturelist' '{' ( Float Float ',' )* Float Float '}'
-PolyList      := 'polylist' '{' ( (Int ' ')+ '-1' ',' )* (Int ' ')+ '-1' '}'
+V3               := Float Float Float
+FloatList        := Float ( [',' ] Float )*
+Flags            := ( FlagName )*               // OR-combo: C_PER_* N_PER_* T_PER_* M_PER_*
+ViewFlags        := ( 'FLAG' (visibility|wireframe|gouraud|nobackface|concave) ('on'|'off') )*
+PrimType         := 'PRIM_POINTS' | 'PRIM_LINES' | 'PRIM_POLY' | 'PRIM_TMESH' | 'PRIM_QMESH'
+TexMode          := 'TEXTURE_DECAL' | 'TEXTURE_MODULATE' | 'TEXTURE_BLEND'
+VertexList       := 'vertexlist' '{' ( V3 ',' )* V3 '}'
+NormalList       := 'normallist' '{' ( V3 ',' )* V3 '}'
+TextureList      := 'texturelist' '{' ( Float Float ',' )* Float Float '}'
+PolyList         := 'polylist' '{' ( (Int ' ')+ '-1' ',' )* (Int ' ')+ '-1' '}'
 NormalIndexList  := 'normalindexlist' '{' ( Int ',' )* Int '}'
 TextureIndexList := 'textureindexlist' '{' ( Int ',' )* Int '}'
 MaterialList     := 'materiallist' '{' ( Int ',' )* Int '}'
 ColourList       := 'colourlist' '{' ( Float Float Float ',' )* Float Float Float '}'
-TypeKw        := 'TYPE_INT' | 'TYPE_FLOAT' | 'TYPE_STRING'
+TypeKw           := 'TYPE_INT' | 'TYPE_FLOAT' | 'TYPE_STRING'
 ```
 
 ---

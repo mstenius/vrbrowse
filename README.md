@@ -27,8 +27,8 @@ Obviously, a browser-only local file viewer cobbled together using javascript, v
 correcting and polishing much of what the agents thought was right, is nowhere close to what we did then. But 
 I hope to convey some of the **flavour** of VR research in the late '90s.
 
-There is very much more to be said about the **DIVE** system itself, and many of the other core ideas pioneered
-there may still have merit. But that is another story.
+There is very much more to be said about the **DIVE** system itself, and all the other core ideas pioneered
+there. But that is another story.
 
 ## Status
 

@@ -2,13 +2,13 @@
 
 export function emtpyScene() {
     return {
-        boxes: [],
-        cylinders: [],
-        meshes: [],
         world: {
             background: [0.2, 0.2, 0.25],
             start: [0, 0, 3]
-        }
+        },
+        boxes: [],
+        cylinders: [],
+        meshes: [],
     };
 }
 
@@ -231,6 +231,8 @@ class Parser {
                     const g = this.expect('number').value;
                     const b = this.expect('number').value;
                     scene.world.background = [r, g, b];
+                    // tmp logging to console
+                    console.log(`World background set to: [${r}, ${g}, ${b}]`);
                 } else if (key === 'start') {
                     // expect a vector (may be prefixed by 'v')
                     const vec = this.parseVector();
@@ -463,27 +465,79 @@ class Parser {
         while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
             if (this.peek().type === 'ident') {
                 const id = this.next().value.toLowerCase();
-                if (id === 'name' && this.peek().type === 'string') { obj.name = this.next().value; continue; }
+                if (id === 'id') {
+                    obj.id = this.expect('number').value;
+                    continue;
+                }
+                if (id === 'name' && this.peek().type === 'string') { 
+                    obj.name = this.next().value; 
+                    continue; 
+                }
                 if (id === 'material') {
                     // three forms: material "NAME" | material rgb r g b | material { ... }
                     if (this.peek().type === 'string') {
-                        const nm = this.next().value; obj.materials.push({ name: nm, diffuse: [0.8, 0.8, 0.8] }); continue;
-                    }
-                    if (this.peek().type === 'ident' && this.peek().value.toLowerCase() === 'rgb') {
+                        const nm = this.next().value;
+                        // TODO: Should be looked up later or filled in here from material library
+                        obj.materials.push({
+                            name: nm,
+                            diffuse: [0.8, 0.8, 0.8]
+                        });
+                    } else if (this.peek().type === 'ident' && this.peek().value.toLowerCase() === 'rgb') {
                         this.next();
-                        const r = this.expect('number').value; const g = this.expect('number').value; const b = this.expect('number').value;
-                        obj.materials.push({ diffuse: [r, g, b] }); continue;
+                        const r = this.expect('number').value;
+                        const g = this.expect('number').value;
+                        const b = this.expect('number').value;
+                        // diffuse color from rgb - should also the other channels be filled in here?
+                        obj.materials.push({
+                            diffuse: [r, g, b]
+                        });
+                    } else if (this.peek().type === '{') {
+                        // TODO: parse material block properly
+                        this.skipBlock(false);
+                        obj.materials.push({
+                            diffuse: [0.8, 0.8, 0.8]
+                        });
+                    } else {
+                        console.warn('Unexpected material format, got:', this.peek());
+                        this.skipValue();
                     }
-                    if (this.peek().type === '{') { this.skipBlock(false); obj.materials.push({ diffuse: [0.8, 0.8, 0.8] }); continue; }
-                    // fallback
-                    this.skipValue(); continue;
+                    continue;
                 }
                 if (id === 'texture') {
-                    if (this.peek().type === 'string') { obj.textures.push(this.next().value); } else this.skipValue(); continue;
+                    if (this.peek().type === 'string') {
+                        obj.textures.push(this.next().value);
+                    } else {
+                        console.warn('Expected texture name string, got:', this.peek());
+                        this.skipValue();
+                    }
+                    continue;
                 }
-                if (id === 'view') { try { this.parseView(scene, obj); } catch (e) { console.warn('view parse error in object:', e && e.message); this.skipBlock(false); } continue; }
-                if (id === 'object') { try { this.parseObject(scene); } catch (e) { console.warn('nested object parse error:', e && e.message); this.skipBlock(false); } continue; }
-                // other known tokens: inline, lodrange etc — skip until we implement
+                if (id === 'view') { 
+                    try {
+                        this.parseView(scene, obj);
+                    }
+                    catch (e) {
+                        console.warn('View parse error in object:', e && e.message);
+                        this.skipBlock(false);
+                    } 
+                    continue; 
+                }
+                if (id === 'object') {
+                    try {
+                        this.parseObject(scene);
+                    } catch (e) {
+                        console.warn('Nested object parse error:', e && e.message);
+                        this.skipBlock(false);
+                    }
+                    continue;
+                }
+
+                //
+                // TODO: Add billboard, lod, switch
+                // TODO: Add flags, gateway, transformation, property, method, light, object-level inline, legacy lod
+                //                
+                // Until then, skip unknown identifiers and their values
+                //
                 if (this.peek().type === '{') { this.skipBlock(false); continue; }
                 this.skipValue(); this.accept(';');
 
@@ -835,21 +889,16 @@ class Parser {
                 this.next();
                 // object handling falls through to block parsing
                 if (kw.toLowerCase() === 'world') {
-                    try { this.parseWorld(scene); } catch (e) { console.warn('world parse error:', e.message); this.skipBlock(false); }
+                    try { this.parseWorld(scene); }
+                    catch (e) { console.warn('world parse error:', e.message); this.skipBlock(false); }
                     continue;
                 }
                 if (kw.toLowerCase() === 'object') {
-                    try { this.parseObject(scene); } catch (e) { console.warn('object parse error:', e && e.message); this.skipBlock(false); }
+                    try { this.parseObject(scene); }
+                    catch (e) { console.warn('object parse error:', e && e.message); this.skipBlock(false); }
                     continue;
                 }
-                if (kw.toLowerCase() === 'view') {
-                    try { this.parseView(scene); } catch (e) { console.warn('view parse error:', e.message); this.skipBlock(false); }
-                    continue;
-                }
-                if (kw.toUpperCase() === 'RBOX') {
-                    try { this.parseRBox(scene); } catch (e) { console.warn('RBOX parse error:', e.message); }
-                    continue;
-                }
+                // TODO: Add billboard, lod, switch, top-level inline
 
                 // unknown identifier:
                 // if followed by '{', skip the block, otherwise skip until semicolon
