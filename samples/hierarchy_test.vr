@@ -1,0 +1,113 @@
+// Test file for object hierarchies and transformations
+
+world "hierarchy_test" {
+  info "Test hierarchical transforms and nested objects"
+  background 0.1 0.1 0.15
+  start v 0 2 10
+}
+
+// Parent object at origin with rotation
+object {
+  name "parent"
+  material rgb 0.8 0.2 0.2
+  
+  // Rotate parent 45 degrees around Y axis
+  eulerxyz v 0 0.785398 0
+  
+  view {
+    name "parent_box"
+    material_index 0
+    RBOX v -0.5 -0.5 -0.5 v 0.5 0.5 0.5
+  }
+  
+  // Child object translated along parent's local X axis
+  object {
+    name "child1"
+    material rgb 0.2 0.8 0.2
+    
+    // Translate 2 units along X
+    translation v 2 0 0
+    
+    view {
+      name "child1_box"
+      material_index 0
+      RBOX v -0.3 -0.3 -0.3 v 0.3 0.3 0.3
+    }
+    
+    // Grandchild translated further
+    object {
+      name "grandchild"
+      material rgb 0.2 0.2 0.8
+      
+      // Translate 1.5 units along Y
+      translation v 0 1.5 0
+      
+      view {
+        name "grandchild_box"
+        material_index 0
+        RBOX v -0.2 -0.2 -0.2 v 0.2 0.2 0.2
+      }
+    }
+  }
+  
+  // Second child on the other side
+  object {
+    name "child2"
+    material rgb 0.8 0.8 0.2
+    
+    // Translate -2 units along X
+    translation v -2 0 0
+    
+    view {
+      name "child2_box"
+      material_index 0
+      RBOX v -0.3 -0.3 -0.3 v 0.3 0.3 0.3
+    }
+  }
+}
+
+// Second top-level object (translated)
+object {
+  name "second_parent"
+  material rgb 0.8 0.2 0.8
+  
+  // Translate and rotate
+  translation v 0 -2 0
+  eulerxyz v 0 0 0.523599
+  
+  view {
+    name "second_parent_cyl"
+    material_index 0
+    CYL v 0 0 0 0.3 0.3 1.5
+  }
+}
+
+// Object with rotation only (spinning box)
+object {
+  name "rotated_obj"
+  material rgb 0.2 0.8 0.8
+  
+  translation v -4 0 0
+  eulerxyz v 0.785398 0.785398 0
+  
+  view {
+    name "rotated_box"
+    material_index 0
+    RBOX v -0.4 -0.4 -0.4 v 0.4 0.4 0.4
+  }
+}
+
+// Object with fixedxyz rotation (different order)
+object {
+  name "fixed_rotation"
+  material rgb 0.8 0.5 0.2
+  
+  translation v 4 0 0
+  fixedxyz v 0.785398 0.523599 0
+  
+  view {
+    name "fixed_box"
+    material_index 0
+    RBOX v -0.4 -0.4 -0.4 v 0.4 0.4 0.4
+  }
+}

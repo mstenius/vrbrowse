@@ -141,94 +141,129 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         sceneGpuMeshes = [];
         if (!scene.objects) return;
         
-        // Traverse objects and upload their views
-        for (const obj of scene.objects) {
-            if (!obj.views) continue;
+        // Helper to recursively process objects and their children
+        function processObject(obj, parentTransform) {
+            // Compute this object's local transform
+            let localTransform = Mat4.identity();
+            if (obj.transforms && obj.transforms.length > 0) {
+                for (const t of obj.transforms) {
+                    if (t.type === 'translation') {
+                        localTransform = Mat4.translate(localTransform, t.value);
+                    } else if (t.type === 'eulerxyz') {
+                        localTransform = Mat4.eulerXYZ(localTransform, t.value);
+                    } else if (t.type === 'fixedxyz') {
+                        localTransform = Mat4.fixedXYZ(localTransform, t.value);
+                    } else if (t.type === 'rotation') {
+                        // rotation is 3 basis vectors (rows of rotation matrix)
+                        const basis = Mat4.fromBasis(t.value[0], t.value[1], t.value[2]);
+                        localTransform = Mat4.multiply(localTransform, basis);
+                    }
+                }
+            }
             
-            for (const view of obj.views) {
-                if (view.type === 'mesh') {
-                    const positions = (view.positions instanceof Float32Array) ? view.positions : new Float32Array(view.positions || []);
-                    const indices = (view.indices instanceof Uint16Array || view.indices instanceof Uint32Array) ? view.indices : new Uint16Array(view.indices || []);
+            // Compute world transform by combining with parent
+            const worldTransform = parentTransform ? Mat4.multiply(parentTransform, localTransform) : localTransform;
+            
+            // Process views in this object
+            if (obj.views) {
+                for (const view of obj.views) {
+                    if (view.type === 'mesh') {
+                        const positions = (view.positions instanceof Float32Array) ? view.positions : new Float32Array(view.positions || []);
+                        const indices = (view.indices instanceof Uint16Array || view.indices instanceof Uint32Array) ? view.indices : new Uint16Array(view.indices || []);
 
-                    // basic validation
-                    if (positions.length % 3 !== 0) { console.warn('uploadSceneMeshes: positions length not multiple of 3, skipping mesh'); continue; }
-                    if (indices.length === 0) { console.warn('uploadSceneMeshes: empty indices, skipping mesh'); continue; }
-                    if (indices.length % 3 !== 0) { console.warn('uploadSceneMeshes: indices length not a multiple of 3 (not triangles)'); }
+                        // basic validation
+                        if (positions.length % 3 !== 0) { console.warn('uploadSceneMeshes: positions length not multiple of 3, skipping mesh'); continue; }
+                        if (indices.length === 0) { console.warn('uploadSceneMeshes: empty indices, skipping mesh'); continue; }
+                        if (indices.length % 3 !== 0) { console.warn('uploadSceneMeshes: indices length not a multiple of 3 (not triangles)'); }
 
-                    // normals: prefer provided, else compute. If provided but wrong size, recompute.
-                    let normalsArr = null;
-                    if (view.normals && view.normals.length > 0) {
-                        if (view.normals.length === positions.length) {
-                            normalsArr = (view.normals instanceof Float32Array) ? view.normals : new Float32Array(view.normals);
+                        // normals: prefer provided, else compute. If provided but wrong size, recompute.
+                        let normalsArr = null;
+                        if (view.normals && view.normals.length > 0) {
+                            if (view.normals.length === positions.length) {
+                                normalsArr = (view.normals instanceof Float32Array) ? view.normals : new Float32Array(view.normals);
+                            } else {
+                                console.warn('uploadSceneMeshes: provided normals length mismatch, recomputing normals');
+                                normalsArr = computeNormals(positions, indices);
+                            }
                         } else {
-                            console.warn('uploadSceneMeshes: provided normals length mismatch, recomputing normals');
                             normalsArr = computeNormals(positions, indices);
                         }
-                    } else {
-                        normalsArr = computeNormals(positions, indices);
-                    }
 
-                    // texcoords: validate size (2 floats per vertex). If mismatch, ignore.
-                    let texcoordsArr = null;
-                    if (view.texcoords && view.texcoords.length > 0) {
-                        const expected = (positions.length / 3) * 2;
-                        if (view.texcoords.length === expected) {
-                            texcoordsArr = (view.texcoords instanceof Float32Array) ? view.texcoords : new Float32Array(view.texcoords);
-                        } else {
-                            console.warn('uploadSceneMeshes: texcoords length mismatch (got', view.texcoords.length, 'expected', expected, '), ignoring texcoords');
+                        // texcoords: validate size (2 floats per vertex). If mismatch, ignore.
+                        let texcoordsArr = null;
+                        if (view.texcoords && view.texcoords.length > 0) {
+                            const expected = (positions.length / 3) * 2;
+                            if (view.texcoords.length === expected) {
+                                texcoordsArr = (view.texcoords instanceof Float32Array) ? view.texcoords : new Float32Array(view.texcoords);
+                            } else {
+                                console.warn('uploadSceneMeshes: texcoords length mismatch (got', view.texcoords.length, 'expected', expected, '), ignoring texcoords');
+                            }
                         }
-                    }
 
-                    const gpu = uploadMeshToGPU(gl, { positions, normals: normalsArr, indices });
-                    // attach texcoord buffer if present
-                    if (texcoordsArr) { gpu.vboTex = createBuffer(gl, texcoordsArr, gl.ARRAY_BUFFER, gl.STATIC_DRAW); gpu.hasTexcoords = true; }
-                    gpu.indexCount = indices.length;
+                        const gpu = uploadMeshToGPU(gl, { positions, normals: normalsArr, indices });
+                        // attach texcoord buffer if present
+                        if (texcoordsArr) { gpu.vboTex = createBuffer(gl, texcoordsArr, gl.ARRAY_BUFFER, gl.STATIC_DRAW); gpu.hasTexcoords = true; }
+                        gpu.indexCount = indices.length;
 
-                    // if view.texture is a string, start loading the image and create GL texture when loaded
-                    const item = { kind: 'mesh', gpu, material: view.material || null, texturePath: view.texture || null };
-                    if (item.texturePath) {
-                        const img = new Image();
-                        img.crossOrigin = '';
-                        img.onload = () => {
-                            try {
-                                const tex = gl.createTexture();
-                                gl.bindTexture(gl.TEXTURE_2D, tex);
-                                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-                                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                                gl.generateMipmap(gl.TEXTURE_2D);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                                item.gpu.texture = tex;
-                            } catch (e) { console.warn('texture creation failed for', item.texturePath, e); }
-                        };
-                        img.onerror = () => { console.warn('Failed to load texture:', item.texturePath); };
-                        // resolve relative paths against current location
-                        try { img.src = view.texture; } catch (e) { console.warn('setting texture src failed', e); }
+                        // if view.texture is a string, start loading the image and create GL texture when loaded
+                        const item = { kind: 'mesh', gpu, material: view.material || null, texturePath: view.texture || null, transform: worldTransform };
+                        if (item.texturePath) {
+                            const img = new Image();
+                            img.crossOrigin = '';
+                            img.onload = () => {
+                                try {
+                                    const tex = gl.createTexture();
+                                    gl.bindTexture(gl.TEXTURE_2D, tex);
+                                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+                                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                                    gl.generateMipmap(gl.TEXTURE_2D);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                                    item.gpu.texture = tex;
+                                } catch (e) { console.warn('texture creation failed for', item.texturePath, e); }
+                            };
+                            img.onerror = () => { console.warn('Failed to load texture:', item.texturePath); };
+                            // resolve relative paths against current location
+                            try { img.src = view.texture; } catch (e) { console.warn('setting texture src failed', e); }
+                        }
+                        sceneGpuMeshes.push(item);
+                    } else if (view.type === 'lines') {
+                        const positions = new Float32Array(view.positions);
+                        const indices = new Uint16Array(view.indices);
+                        // create empty normals (copy position as dummy)
+                        const normals = new Float32Array(positions.length);
+                        const vboPos = createBuffer(gl, positions, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
+                        const vboNorm = createBuffer(gl, normals, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
+                        const ibo = createBuffer(gl, indices, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
+                        sceneGpuMeshes.push({ kind: 'lines', vboPos, vboNorm, ibo, indexCount: indices.length, material: view.material || null, transform: worldTransform });
+                    } else if (view.type === 'sphere') {
+                        // tessellate a unit sphere and scale in model matrix when drawing
+                        const sph = createSphere(16, 16);
+                        const gpu = uploadMeshToGPU(gl, sph);
+                        sceneGpuMeshes.push({ kind: 'sphere', gpu, rx: view.rx, ry: view.ry, rz: view.rz, material: view.material || null, transform: worldTransform });
+                    } else if (view.type === 'rbox') {
+                        // Store rbox views as items to be drawn using the cube geometry
+                        sceneGpuMeshes.push({ kind: 'rbox', center: view.center, size: view.size, material: view.material || null, transform: worldTransform });
+                    } else if (view.type === 'cylinder') {
+                        // Store cylinder views
+                        sceneGpuMeshes.push({ kind: 'cylinder', center: view.center, rx: view.rx, ry: view.ry, height: view.height, material: view.material || null, transform: worldTransform });
                     }
-                    sceneGpuMeshes.push(item);
-                } else if (view.type === 'lines') {
-                    const positions = new Float32Array(view.positions);
-                    const indices = new Uint16Array(view.indices);
-                    // create empty normals (copy position as dummy)
-                    const normals = new Float32Array(positions.length);
-                    const vboPos = createBuffer(gl, positions, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
-                    const vboNorm = createBuffer(gl, normals, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
-                    const ibo = createBuffer(gl, indices, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
-                    sceneGpuMeshes.push({ kind: 'lines', vboPos, vboNorm, ibo, indexCount: indices.length, material: view.material || null });
-                } else if (view.type === 'sphere') {
-                    // tessellate a unit sphere and scale in model matrix when drawing
-                    const sph = createSphere(16, 16);
-                    const gpu = uploadMeshToGPU(gl, sph);
-                    sceneGpuMeshes.push({ kind: 'sphere', gpu, rx: view.rx, ry: view.ry, rz: view.rz, material: view.material || null });
-                } else if (view.type === 'rbox') {
-                    // Store rbox views as items to be drawn using the cube geometry
-                    sceneGpuMeshes.push({ kind: 'rbox', center: view.center, size: view.size, material: view.material || null });
-                } else if (view.type === 'cylinder') {
-                    // Store cylinder views
-                    sceneGpuMeshes.push({ kind: 'cylinder', center: view.center, rx: view.rx, ry: view.ry, height: view.height, material: view.material || null });
+                }
+            }
+            
+            // Recursively process children
+            if (obj.children && obj.children.length > 0) {
+                for (const child of obj.children) {
+                    processObject(child, worldTransform);
                 }
             }
         }
+        
+        // Traverse all top-level objects
+        for (const obj of scene.objects) {
+            processObject(obj, null);
+        }
+        
         console.log('uploadSceneMeshes: uploaded', sceneGpuMeshes.length, 'views');
     }
 
@@ -369,8 +404,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    // model matrix: scale then translate
-                    let M = Mat4.identity();
+                    // model matrix: apply object transform, then translate to center, then scale
+                    let M = item.transform || Mat4.identity();
                     M = Mat4.translate(M, item.center);
                     // apply scale by multiplying columns (cheap hack)
                     const sx = item.size[0], sy = item.size[1], sz = item.size[2];
@@ -386,7 +421,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                         gl.bindBuffer(gl.ARRAY_BUFFER, cylVboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                         gl.bindBuffer(gl.ARRAY_BUFFER, cylVboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cylIbo);
-                        let M = Mat4.identity();
+                        let M = item.transform || Mat4.identity();
                         M = Mat4.translate(M, item.center);
                         // scale: cylinder unit radius is 0.5 - full size on X/Z should be 2*rx
                         const sx = item.rx * 2; const sy = item.height; const sz = item.ry * 2;
@@ -403,8 +438,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     if (gpu.vboTex && attribs.aTexCoord >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboTex); gl.enableVertexAttribArray(attribs.aTexCoord); gl.vertexAttribPointer(attribs.aTexCoord, 2, gl.FLOAT, false, 0, 0); }
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.ibo);
-                    // simple model matrix identity
-                    gl.uniformMatrix4fv(uniforms.uModel, false, Mat4.identity());
+                    // apply object transform
+                    gl.uniformMatrix4fv(uniforms.uModel, false, item.transform || Mat4.identity());
                     // set material color
                     const col = (item.material && item.material.diffuse) ? item.material.diffuse : [0.8, 0.8, 0.8];
                     gl.uniform3fv(uniforms.uColor, new Float32Array(col));
@@ -434,7 +469,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, item.vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, item.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, item.ibo);
-                    gl.uniformMatrix4fv(uniforms.uModel, false, Mat4.identity());
+                    gl.uniformMatrix4fv(uniforms.uModel, false, item.transform || Mat4.identity());
                     const col = (item.material && item.material.diffuse) ? item.material.diffuse : [1.0, 0.5, 0.0];
                     gl.uniform3fv(uniforms.uColor, new Float32Array(col));
                     gl.uniform1i(uniforms.uUseTexture, 0);
@@ -444,7 +479,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.ibo);
-                    let M = Mat4.identity();
+                    let M = item.transform || Mat4.identity();
                     // apply non-uniform scale
                     M[0] *= item.rx; M[1] *= item.rx; M[2] *= item.rx;
                     M[4] *= item.ry; M[5] *= item.ry; M[6] *= item.ry;

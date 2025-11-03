@@ -22,13 +22,92 @@ export const Mat4 = {
         return out;
     },
 
-    // Translation: out = m translated by v
+    // Translation: out = m * T(v)
     translate(m, v) {
+        // Create translation matrix and multiply
+        const t = new Float32Array([
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            v[0], v[1], v[2], 1
+        ]);
+        return Mat4.multiply(m, t);
+    },
+
+    // Rotation around X axis
+    rotateX(m, rad) {
+        const c = Math.cos(rad);
+        const s = Math.sin(rad);
+        const rot = new Float32Array([
+            1, 0, 0, 0,
+            0, c, s, 0,
+            0, -s, c, 0,
+            0, 0, 0, 1
+        ]);
+        return Mat4.multiply(m, rot);
+    },
+
+    // Rotation around Y axis
+    rotateY(m, rad) {
+        const c = Math.cos(rad);
+        const s = Math.sin(rad);
+        const rot = new Float32Array([
+            c, 0, -s, 0,
+            0, 1, 0, 0,
+            s, 0, c, 0,
+            0, 0, 0, 1
+        ]);
+        return Mat4.multiply(m, rot);
+    },
+
+    // Rotation around Z axis
+    rotateZ(m, rad) {
+        const c = Math.cos(rad);
+        const s = Math.sin(rad);
+        const rot = new Float32Array([
+            c, s, 0, 0,
+            -s, c, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ]);
+        return Mat4.multiply(m, rot);
+    },
+
+    // Euler XYZ rotation (rotating frame): rotate around local X, then local Y, then local Z
+    eulerXYZ(m, angles) {
+        let result = m;
+        result = Mat4.rotateX(result, angles[0]);
+        result = Mat4.rotateY(result, angles[1]);
+        result = Mat4.rotateZ(result, angles[2]);
+        return result;
+    },
+
+    // Fixed XYZ rotation (world frame): rotate around world X, Y, Z
+    fixedXYZ(m, angles) {
+        let result = m;
+        result = Mat4.rotateZ(result, angles[2]);
+        result = Mat4.rotateY(result, angles[1]);
+        result = Mat4.rotateX(result, angles[0]);
+        return result;
+    },
+
+    // Scale matrix
+    scale(m, v) {
         const out = new Float32Array(m);
-        out[12] += v[0];
-        out[13] += v[1];
-        out[14] += v[2];
+        out[0] *= v[0]; out[1] *= v[0]; out[2] *= v[0]; out[3] *= v[0];
+        out[4] *= v[1]; out[5] *= v[1]; out[6] *= v[1]; out[7] *= v[1];
+        out[8] *= v[2]; out[9] *= v[2]; out[10] *= v[2]; out[11] *= v[2];
         return out;
+    },
+
+    // Create matrix from 3x3 rotation basis (rows = basis vectors)
+    fromBasis(v1, v2, v3) {
+        return new Float32Array([
+            v1[0], v1[1], v1[2], 0,
+            v2[0], v2[1], v2[2], 0,
+            v3[0], v3[1], v3[2], 0,
+            0, 0, 0, 1
+        ]);
     },
 
     // Perspective matrix

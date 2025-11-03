@@ -459,10 +459,10 @@ class Parser {
     }
 
     // Parse an object block: collect materials and textures and parse child views/objects
-    parseObject(scene) {
+    parseObject(scene, parentObj = null) {
         // assume 'object' identifier already consumed
         // optional name or string may follow inside block
-        let obj = { name: null, materials: [], textures: [], children: [] };
+        let obj = { name: null, materials: [], textures: [], children: [], transforms: [] };
         // if next token is a string (uncommon) or ident, we'll handle inside the block
         if (this.peek().type === 'string') this.next();
         this.expect('{');
@@ -516,6 +516,29 @@ class Parser {
                     }
                     continue;
                 }
+                if (id === 'translation') {
+                    const vec = this.parseVector();
+                    obj.transforms.push({ type: 'translation', value: vec });
+                    continue;
+                }
+                if (id === 'eulerxyz') {
+                    const vec = this.parseVector();
+                    obj.transforms.push({ type: 'eulerxyz', value: vec });
+                    continue;
+                }
+                if (id === 'fixedxyz') {
+                    const vec = this.parseVector();
+                    obj.transforms.push({ type: 'fixedxyz', value: vec });
+                    continue;
+                }
+                if (id === 'rotation') {
+                    // rotation v X1 Y1 Z1 v X2 Y2 Z2 v X3 Y3 Z3 (3 basis vectors)
+                    const v1 = this.parseVector();
+                    const v2 = this.parseVector();
+                    const v3 = this.parseVector();
+                    obj.transforms.push({ type: 'rotation', value: [v1, v2, v3] });
+                    continue;
+                }
                 if (id === 'view') { 
                     try {
                         this.parseView(scene, obj);
@@ -528,7 +551,8 @@ class Parser {
                 }
                 if (id === 'object') {
                     try {
-                        this.parseObject(scene);
+                        const childObj = this.parseObject(scene, obj);
+                        obj.children.push(childObj);
                     } catch (e) {
                         console.warn('Nested object parse error:', e && e.message);
                         this.skipBlock(false);
@@ -538,7 +562,7 @@ class Parser {
 
                 //
                 // TODO: Add billboard, lod, switch
-                // TODO: Add flags, gateway, transformation, property, method, light, object-level inline, legacy lod
+                // TODO: Add flags, gateway, property, method, light, object-level inline, legacy lod
                 //                
                 // Until then, skip unknown identifiers and their values
                 //
@@ -557,10 +581,11 @@ class Parser {
             }
         }
         this.accept('}');
-        // attach to scene if needed (scene does not currently keep objects list, but meshes from views reference materials/textures via parentObject)
-        // For debugging, we store top-level objects collection
-        scene.objects = scene.objects || [];
-        scene.objects.push(obj);
+        // attach to scene if parent is null (top-level object)
+        if (!parentObj) {
+            scene.objects = scene.objects || [];
+            scene.objects.push(obj);
+        }
         return obj;
     }
 
