@@ -6,9 +6,7 @@ export function emtpyScene() {
             background: [0.2, 0.2, 0.25],
             start: [0, 0, 3]
         },
-        boxes: [],
-        cylinders: [],
-        meshes: [],
+        objects: [], // Top-level objects, each containing views (geometry)
     };
 }
 
@@ -266,16 +264,19 @@ class Parser {
         const minz = Math.min(z0, z1), maxz = Math.max(z0, z1);
         const center = [(minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2];
         const size = [maxx - minx, maxy - miny, maxz - minz];
-        const box = { center, size };
+        const view = { type: 'rbox', center, size, material_index };
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
             if (material_index !== null && parentObject.materials[material_index]) {
-                box.material = parentObject.materials[material_index];
+                view.material = parentObject.materials[material_index];
             }
             else {
-                box.material = parentObject.materials[0];
+                view.material = parentObject.materials[0];
             }
         }
-        scene.boxes.push(box);
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
     }
 
     parseCyl(scene, parentObject = null, material_index = null) {
@@ -306,16 +307,19 @@ class Parser {
         }
         this.accept(';');
 
-        const cyl = { center, rx, ry, height };
+        const view = { type: 'cylinder', center, rx, ry, height, material_index };
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
             if (material_index !== null && parentObject.materials[material_index]) {
-                cyl.material = parentObject.materials[material_index];
+                view.material = parentObject.materials[material_index];
             }
             else {
-                cyl.material = parentObject.materials[0];
+                view.material = parentObject.materials[0];
             }
         }
-        scene.cylinders.push(cyl);
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
     }
 
     parseView(scene, parentObject) {
@@ -399,15 +403,15 @@ class Parser {
                         catch (e) { console.warn('indexed_poly parse error in view:', e.message); }
 
                     } else if (value === 'N_LINE' || value === 'LINE') {
-                        try { this.parseLinePrimitive(scene, value.toUpperCase()); } 
+                        try { this.parseLinePrimitive(scene, value.toUpperCase(), parentObject, material_index, texture_index); } 
                         catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); }
 
                     } else if (value === 'SPHERE') {
-                        try { this.parseSphereInView(scene); }
+                        try { this.parseSphereInView(scene, parentObject, material_index, texture_index); }
                         catch (e) { console.warn('SPHERE parse error in view:', e.message); }
 
                     } else if (value === 'QUAD_GRID') {
-                        try { this.parseQuadGrid(scene); }
+                        try { this.parseQuadGrid(scene, parentObject, material_index, texture_index); }
                         catch (e) { console.warn('QUAD_GRID parse error in view:', e.message); }
 
                     } else {
@@ -444,7 +448,7 @@ class Parser {
 
             } else if (value === 'SPHERE') {
                 this.next();
-                try { this.parseSphereInView(scene); }
+                try { this.parseSphereInView(scene, parentObject, material_index, texture_index); }
                 catch (e) { console.warn('SPHERE parse error in single-line view:', e.message); }
 
             } else {
@@ -561,7 +565,7 @@ class Parser {
     }
 
     // parse a simple sphere primitive inside a view: SPHERE rx ry rz  (or single radius)
-    parseSphereInView(scene) {
+    parseSphereInView(scene, parentObject, material_index, texture_index) {
         // read up to three numbers
         const nums = [];
         for (let k = 0; k < 3; k++) {
@@ -573,13 +577,16 @@ class Parser {
         let rx = 0.5, ry = 0.5, rz = 0.5;
         if (nums.length === 1) { rx = ry = rz = nums[0]; }
         else if (nums.length === 3) { rx = nums[0]; ry = nums[1]; rz = nums[2]; }
-        // push a sphere descriptor to scene.meshes; viewer will tessellate
-        scene.meshes = scene.meshes || [];
-        scene.meshes.push({ type: 'sphere', rx, ry, rz });
+        // push a sphere descriptor as a view in the parent object
+        const view = { type: 'sphere', rx, ry, rz, material_index, texture_index };
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
     }
 
     // parse QUAD_GRID NX NY v p0 v p1 v p2 v p3
-    parseQuadGrid(scene) {
+    parseQuadGrid(scene, parentObject, material_index, texture_index) {
         // expect two ints
         const nxTok = this.expect('number'); const nyTok = this.expect('number');
         const nx = nxTok.value | 0; const ny = nyTok.value | 0;
@@ -613,12 +620,15 @@ class Parser {
                 indices.push(i1, i2, i3);
             }
         }
-        scene.meshes = scene.meshes || [];
-        scene.meshes.push({ type: 'mesh', positions, indices });
+        const view = { type: 'mesh', positions, indices, material_index, texture_index };
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
     }
 
     // parse N_LINE / LINE primitives inside a view
-    parseLinePrimitive(scene, kind) {
+    parseLinePrimitive(scene, kind, parentObject, material_index, texture_index) {
         // If kind == 'N_LINE' the next token may be a count
         let count = null;
         if (kind === 'N_LINE' && this.peek().type === 'number') { count = this.next().value | 0; }
@@ -633,8 +643,11 @@ class Parser {
         const indices = [];
         const vcount = verts.length / 3;
         for (let i = 0; i < vcount - 1; i++) indices.push(i, i + 1);
-        scene.meshes = scene.meshes || [];
-        scene.meshes.push({ type: 'lines', positions: verts, indices });
+        const view = { type: 'lines', positions: verts, indices, material_index, texture_index };
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
     }
 
     // parse indexed_poly { ... } minimal support: vertexlist & polylist
@@ -866,16 +879,16 @@ class Parser {
             }
         }
 
-        scene.meshes = scene.meshes || [];
-        const meshObj = { type: 'mesh', positions: outPositions, indices: outIndices };
-        if (outNormals.some(v => v !== 0)) meshObj.normals = outNormals;
-        if (outTexcoords.some(v => v !== 0)) meshObj.texcoords = outTexcoords;
+        const view = { type: 'mesh', positions: outPositions, indices: outIndices, material_index, texture_index };
+        if (outNormals.some(v => v !== 0)) view.normals = outNormals;
+        if (outTexcoords.some(v => v !== 0)) view.texcoords = outTexcoords;
         // resolve material/texture strings from parentObject if available
         if (parentObject) {
-            if (material_index !== null && parentObject.materials && parentObject.materials[material_index]) meshObj.material = parentObject.materials[material_index];
-            if (texture_index !== null && parentObject.textures && parentObject.textures[texture_index]) meshObj.texture = parentObject.textures[texture_index];
+            if (material_index !== null && parentObject.materials && parentObject.materials[material_index]) view.material = parentObject.materials[material_index];
+            if (texture_index !== null && parentObject.textures && parentObject.textures[texture_index]) view.texture = parentObject.textures[texture_index];
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
         }
-        scene.meshes.push(meshObj);
     }
 
     // Top-level: handle known keywords, otherwise skip unknown blocks or tokens
