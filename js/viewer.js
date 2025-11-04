@@ -35,17 +35,51 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             return;
         }
         const vs = `attribute vec3 aPosition;attribute vec3 aNormal;attribute vec2 aTexCoord;uniform mat4 uModel;uniform mat4 uViewProj;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;void main(){vNormal = mat3(uModel)*aNormal; vPos=(uModel*vec4(aPosition,1.0)).xyz; vTexCoord = aTexCoord; gl_Position = uViewProj * uModel * vec4(aPosition,1.0);} `;
-        const fs = `precision mediump float;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;uniform vec3 uColor;uniform vec3 uLightDir;uniform sampler2D uTexture;uniform int uUseTexture;void main(){vec3 N = normalize(vNormal); float d = max(dot(N, -uLightDir), 0.0); vec3 base = uColor * 0.6 + 0.4*uColor*d; vec3 finalCol = base; if(uUseTexture==1){ vec4 t = texture2D(uTexture, vTexCoord); finalCol = t.rgb * base; } gl_FragColor = vec4(finalCol,1.0);} `;
-        prog = createProgram(gl, vs, fs);
-        attribs.aPosition = gl.getAttribLocation(prog, 'aPosition');
-        attribs.aNormal = gl.getAttribLocation(prog, 'aNormal');
-        attribs.aTexCoord = gl.getAttribLocation(prog, 'aTexCoord');
-        uniforms.uModel = gl.getUniformLocation(prog, 'uModel');
-        uniforms.uViewProj = gl.getUniformLocation(prog, 'uViewProj');
-        uniforms.uColor = gl.getUniformLocation(prog, 'uColor');
-        uniforms.uLightDir = gl.getUniformLocation(prog, 'uLightDir');
-        uniforms.uTexture = gl.getUniformLocation(prog, 'uTexture');
-        uniforms.uUseTexture = gl.getUniformLocation(prog, 'uUseTexture');
+        const fs = `precision mediump float;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;uniform vec3 uColor;uniform vec3 uAmbient;uniform vec3 uEmission;uniform vec3 uSpecular;uniform float uSpecPower;uniform float uTransparency;uniform vec3 uLightDir;uniform sampler2D uTexture;uniform int uUseTexture;void main(){
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(-uLightDir);
+    vec3 V = normalize(-vPos);
+    float diff = max(dot(N, L), 0.0);
+    vec3 diffuse = uColor * diff;
+    vec3 ambient = uAmbient;
+    vec3 emission = uEmission;
+    vec3 specular = vec3(0.0);
+    if(uSpecPower > 0.0 && diff > 0.0){
+        vec3 R = reflect(-L, N);
+        float s = pow(max(dot(R, V), 0.0), uSpecPower);
+        specular = uSpecular * s;
+    }
+    vec3 base = ambient + diffuse + specular;
+    if(uUseTexture==1){
+        vec4 t = texture2D(uTexture, vTexCoord);
+        base *= t.rgb;
+    }
+    // Add emission as additive (not affected by lighting)
+    vec3 finalCol = base + emission;
+    float alpha = 1.0 - clamp(uTransparency, 0.0, 1.0);
+    gl_FragColor = vec4(finalCol, alpha);
+    if(alpha < 1.0) {
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, emission, uTransparency);
+    }
+}`;
+    prog = createProgram(gl, vs, fs);
+    attribs.aPosition = gl.getAttribLocation(prog, 'aPosition');
+    attribs.aNormal = gl.getAttribLocation(prog, 'aNormal');
+    attribs.aTexCoord = gl.getAttribLocation(prog, 'aTexCoord');
+    uniforms.uModel = gl.getUniformLocation(prog, 'uModel');
+    uniforms.uViewProj = gl.getUniformLocation(prog, 'uViewProj');
+    uniforms.uColor = gl.getUniformLocation(prog, 'uColor');
+    uniforms.uAmbient = gl.getUniformLocation(prog, 'uAmbient');
+    uniforms.uEmission = gl.getUniformLocation(prog, 'uEmission');
+    uniforms.uSpecular = gl.getUniformLocation(prog, 'uSpecular');
+    uniforms.uSpecPower = gl.getUniformLocation(prog, 'uSpecPower');
+    uniforms.uTransparency = gl.getUniformLocation(prog, 'uTransparency');
+    uniforms.uLightDir = gl.getUniformLocation(prog, 'uLightDir');
+    uniforms.uTexture = gl.getUniformLocation(prog, 'uTexture');
+    uniforms.uUseTexture = gl.getUniformLocation(prog, 'uUseTexture');
+    // Enable blending for transparency
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         enableDepth(gl);
         // Debug info
         console.log('initGL: attribs', { aPosition: attribs.aPosition, aNormal: attribs.aNormal });
@@ -401,36 +435,50 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         // draw scene objects and their views
         if (sceneGpuMeshes.length > 0) {
             for (const item of sceneGpuMeshes) {
+                // Helper: get material property or fallback
+                function matProp(mat, key, fallback) {
+                    return (mat && mat[key] !== undefined) ? mat[key] : fallback;
+                }
                 if (item.kind === 'rbox') {
-                    // bind cube geometry
                     gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    // model matrix: apply object transform, then translate to center, then scale
                     let M = item.transform || Mat4.identity();
                     M = Mat4.translate(M, item.center);
-                    // apply scale by multiplying columns (cheap hack)
                     const sx = item.size[0], sy = item.size[1], sz = item.size[2];
                     M[0] *= sx; M[1] *= sx; M[2] *= sx; M[4] *= sy; M[5] *= sy; M[6] *= sy; M[8] *= sz; M[9] *= sz; M[10] *= sz;
                     gl.uniformMatrix4fv(uniforms.uModel, false, M);
-                    const col = (item.material && item.material.diffuse) ? item.material.diffuse : [128 / 255, 128 / 255, 128 / 255];
-                    gl.uniform3fv(uniforms.uColor, new Float32Array(col));
+                    gl.uniform3fv(uniforms.uColor, new Float32Array(matProp(item.material, 'diffuse', [0.5,0.5,0.5])));
+                    gl.uniform3fv(uniforms.uAmbient, new Float32Array(matProp(item.material, 'ambient', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uEmission, new Float32Array(matProp(item.material, 'emission', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uSpecular, new Float32Array(matProp(item.material, 'specular', [0.0,0.0,0.0])));
+                    // Map spec_power from [0,1] to [1,128] for shader
+                    let sp = matProp(item.material, 'spec_power', 0.0);
+                    sp = Math.max(0.0, Math.min(1.0, sp));
+                    sp = 1.0 + sp * 127.0;
+                    gl.uniform1f(uniforms.uSpecPower, sp);
+                    gl.uniform1f(uniforms.uTransparency, matProp(item.material, 'transparency', 0.0));
                     gl.uniform1i(uniforms.uUseTexture, 0);
                     gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
                 } else if (item.kind === 'cylinder') {
-                    // bind cylinder geometry
                     if (cylIbo) {
                         gl.bindBuffer(gl.ARRAY_BUFFER, cylVboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                         gl.bindBuffer(gl.ARRAY_BUFFER, cylVboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cylIbo);
                         let M = item.transform || Mat4.identity();
                         M = Mat4.translate(M, item.center);
-                        // scale: cylinder unit radius is 0.5 - full size on X/Z should be 2*rx
                         const sx = item.rx * 2; const sy = item.height; const sz = item.ry * 2;
                         M[0] *= sx; M[1] *= sx; M[2] *= sx; M[4] *= sy; M[5] *= sy; M[6] *= sy; M[8] *= sz; M[9] *= sz; M[10] *= sz;
                         gl.uniformMatrix4fv(uniforms.uModel, false, M);
-                        const col = (item.material && item.material.diffuse) ? item.material.diffuse : [128 / 255, 128 / 255, 128 / 255];
-                        gl.uniform3fv(uniforms.uColor, new Float32Array(col));
+                        gl.uniform3fv(uniforms.uColor, new Float32Array(matProp(item.material, 'diffuse', [0.5,0.5,0.5])));
+                        gl.uniform3fv(uniforms.uAmbient, new Float32Array(matProp(item.material, 'ambient', [0.0,0.0,0.0])));
+                        gl.uniform3fv(uniforms.uEmission, new Float32Array(matProp(item.material, 'emission', [0.0,0.0,0.0])));
+                        gl.uniform3fv(uniforms.uSpecular, new Float32Array(matProp(item.material, 'specular', [0.0,0.0,0.0])));
+                        let sp = matProp(item.material, 'spec_power', 0.0);
+                        sp = Math.max(0.0, Math.min(1.0, sp));
+                        sp = 1.0 + sp * 127.0;
+                        gl.uniform1f(uniforms.uSpecPower, sp);
+                        gl.uniform1f(uniforms.uTransparency, matProp(item.material, 'transparency', 0.0));
                         gl.uniform1i(uniforms.uUseTexture, 0);
                         gl.drawElements(gl.TRIANGLES, cylIndexCount, gl.UNSIGNED_SHORT, 0);
                     }
@@ -440,13 +488,16 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     if (gpu.vboTex && attribs.aTexCoord >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboTex); gl.enableVertexAttribArray(attribs.aTexCoord); gl.vertexAttribPointer(attribs.aTexCoord, 2, gl.FLOAT, false, 0, 0); }
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.ibo);
-                    // apply object transform
                     gl.uniformMatrix4fv(uniforms.uModel, false, item.transform || Mat4.identity());
-                    // set material color
-                    const col = (item.material && item.material.diffuse) ? item.material.diffuse : [0.8, 0.8, 0.8];
-                    gl.uniform3fv(uniforms.uColor, new Float32Array(col));
-                    // bind texture if ready
-                    // Always bind a texture unit. If the mesh has a texture use it, otherwise bind the default white texture.
+                    gl.uniform3fv(uniforms.uColor, new Float32Array(matProp(item.material, 'diffuse', [0.8,0.8,0.8])));
+                    gl.uniform3fv(uniforms.uAmbient, new Float32Array(matProp(item.material, 'ambient', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uEmission, new Float32Array(matProp(item.material, 'emission', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uSpecular, new Float32Array(matProp(item.material, 'specular', [0.0,0.0,0.0])));
+                    let sp = matProp(item.material, 'spec_power', 0.0);
+                    sp = Math.max(0.0, Math.min(1.0, sp));
+                    sp = 1.0 + sp * 127.0;
+                    gl.uniform1f(uniforms.uSpecPower, sp);
+                    gl.uniform1f(uniforms.uTransparency, matProp(item.material, 'transparency', 0.0));
                     gl.activeTexture(gl.TEXTURE0);
                     if (gpu.texture) {
                         gl.bindTexture(gl.TEXTURE_2D, gpu.texture);
@@ -456,24 +507,27 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                         gl.bindTexture(gl.TEXTURE_2D, null);
                     }
                     gl.uniform1i(uniforms.uTexture, 0);
-                    // always enable texture usage in shader; default texture is white so it leaves base color unchanged
                     gl.uniform1i(uniforms.uUseTexture, 1);
-                    // Ensure a valid texcoord attribute is present: if mesh provided vboTex we enabled it above;
-                    // otherwise disable the attribute array and set a safe generic attribute value of (0,0)
                     if (!(gpu.vboTex && attribs.aTexCoord >= 0) && attribs.aTexCoord >= 0) {
                         gl.disableVertexAttribArray(attribs.aTexCoord);
                         gl.vertexAttrib2f(attribs.aTexCoord, 0.0, 0.0);
                     }
                     gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_SHORT, 0);
-                    // cleanup texcoord attrib if used
                     if (gpu.vboTex && attribs.aTexCoord >= 0) { gl.disableVertexAttribArray(attribs.aTexCoord); }
                 } else if (item.kind === 'lines') {
                     gl.bindBuffer(gl.ARRAY_BUFFER, item.vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, item.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, item.ibo);
                     gl.uniformMatrix4fv(uniforms.uModel, false, item.transform || Mat4.identity());
-                    const col = (item.material && item.material.diffuse) ? item.material.diffuse : [1.0, 0.5, 0.0];
-                    gl.uniform3fv(uniforms.uColor, new Float32Array(col));
+                    gl.uniform3fv(uniforms.uColor, new Float32Array(matProp(item.material, 'diffuse', [1.0,0.5,0.0])));
+                    gl.uniform3fv(uniforms.uAmbient, new Float32Array(matProp(item.material, 'ambient', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uEmission, new Float32Array(matProp(item.material, 'emission', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uSpecular, new Float32Array(matProp(item.material, 'specular', [0.0,0.0,0.0])));
+                    let sp = matProp(item.material, 'spec_power', 0.0);
+                    sp = Math.max(0.0, Math.min(1.0, sp));
+                    sp = 1.0 + sp * 127.0;
+                    gl.uniform1f(uniforms.uSpecPower, sp);
+                    gl.uniform1f(uniforms.uTransparency, matProp(item.material, 'transparency', 0.0));
                     gl.uniform1i(uniforms.uUseTexture, 0);
                     gl.drawElements(gl.LINES, item.indexCount, gl.UNSIGNED_SHORT, 0);
                 } else if (item.kind === 'sphere') {
@@ -481,10 +535,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.ibo);
-                    // Build transform: apply object transform first, then scale for sphere size
-                    // Sphere geometry has radius 0.5, so we need to scale by 2*radius to get the desired radius
                     let M = item.transform || Mat4.identity();
-                    // Create a scale matrix and multiply it (scale is applied in local space)
                     const scaleM = new Float32Array([
                         item.rx * 2, 0, 0, 0,
                         0, item.ry * 2, 0, 0,
@@ -493,8 +544,15 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     ]);
                     M = Mat4.multiply(M, scaleM);
                     gl.uniformMatrix4fv(uniforms.uModel, false, M);
-                    const col = (item.material && item.material.diffuse) ? item.material.diffuse : [0.6, 0.9, 0.6];
-                    gl.uniform3fv(uniforms.uColor, new Float32Array(col));
+                    gl.uniform3fv(uniforms.uColor, new Float32Array(matProp(item.material, 'diffuse', [0.6,0.9,0.6])));
+                    gl.uniform3fv(uniforms.uAmbient, new Float32Array(matProp(item.material, 'ambient', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uEmission, new Float32Array(matProp(item.material, 'emission', [0.0,0.0,0.0])));
+                    gl.uniform3fv(uniforms.uSpecular, new Float32Array(matProp(item.material, 'specular', [0.0,0.0,0.0])));
+                    let sp = matProp(item.material, 'spec_power', 0.0);
+                    sp = Math.max(0.0, Math.min(1.0, sp));
+                    sp = 1.0 + sp * 127.0;
+                    gl.uniform1f(uniforms.uSpecPower, sp);
+                    gl.uniform1f(uniforms.uTransparency, matProp(item.material, 'transparency', 0.0));
                     gl.uniform1i(uniforms.uUseTexture, 0);
                     gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_SHORT, 0);
                 }

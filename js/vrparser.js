@@ -525,23 +525,61 @@ class Parser {
                         // TODO: Should be looked up later or filled in here from material library
                         obj.materials.push({
                             name: nm,
-                            diffuse: [0.8, 0.8, 0.8]
+                            ambient: [0.0, 0.0, 0.0],
+                            diffuse: [0.8, 0.8, 0.8],
+                            emission: [0.0, 0.0, 0.0],
+                            specular: [0.0, 0.0, 0.0],
+                            spec_power: 0.0,
+                            transparency: 0.0
                         });
                     } else if (this.peek().type === 'ident' && this.peek().value.toLowerCase() === 'rgb') {
                         this.next();
                         const r = this.expect('number').value;
                         const g = this.expect('number').value;
                         const b = this.expect('number').value;
-                        // diffuse color from rgb - should also the other channels be filled in here?
+                        // According to spec, rgb sets both ambient and diffuse
                         obj.materials.push({
-                            diffuse: [r, g, b]
+                            ambient: [r, g, b],
+                            diffuse: [r, g, b],
+                            emission: [0.0, 0.0, 0.0],
+                            specular: [0.0, 0.0, 0.0],
+                            spec_power: 0.0,
+                            transparency: 0.0
                         });
                     } else if (this.peek().type === '{') {
-                        // TODO: parse material block properly
-                        this.skipBlock(false);
-                        obj.materials.push({
-                            diffuse: [0.8, 0.8, 0.8]
-                        });
+                        this.next(); // consume '{'
+                        // Parse material property block
+                        let mat = {
+                            ambient: [0.0, 0.0, 0.0],
+                            diffuse: [0.8, 0.8, 0.8],
+                            emission: [0.0, 0.0, 0.0],
+                            specular: [0.0, 0.0, 0.0],
+                            spec_power: 0.0,
+                            transparency: 0.0
+                        };
+                        while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
+                            if (this.peek().type === 'ident') {
+                                const prop = this.next().value.toLowerCase();
+                                if (['ambient','diffuse','emission','specular'].includes(prop)) {
+                                    // expect 3 numbers
+                                    const r = this.expect('number').value;
+                                    const g = this.expect('number').value;
+                                    const b = this.expect('number').value;
+                                    mat[prop] = [r, g, b];
+                                } else if (prop === 'spec_power') {
+                                    mat.spec_power = this.expect('number').value;
+                                } else if (prop === 'transparency') {
+                                    mat.transparency = this.expect('number').value;
+                                } else {
+                                    // skip unknown property
+                                    this.skipValue();
+                                }
+                            } else {
+                                this.skipValue();
+                            }
+                        }
+                        this.accept('}');
+                        obj.materials.push(mat);
                     } else {
                         console.warn('Unexpected material format, got:', this.peek());
                         this.skipValue();

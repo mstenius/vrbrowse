@@ -412,7 +412,14 @@ QuadGrid         := 'QUAD_GRID' Int Int 'v' V3 'v' V3 'v' V3 'v' V3
 TextView         := ( 'TEXT' | 'LTEXT' | 'CTEXT' | 'RTEXT' ) Float String String
 Background       := 'BACKGROUND' [ 'texture_indices' Int Int Int Int Int Int ]
 
-MaterialDecl     := 'material' ( String | 'rgb' Float Float Float | '{' MaterialProps '}' )
+MaterialDecl     := 'material' ( String | 'rgb' Float Float Float | '{' MaterialProp* '}' )
+MaterialProp     := Diffuse | Ambient | Specular | SpecPower | Transparency
+Diffuse          := 'diffuse' Float Float Float
+Ambient          := 'ambient' Float Float Float
+Emission         := 'emission' Float Float Float
+Specular         := 'specular' Float Float Float
+SpecPower        := 'spec_power' Float
+Transparency     := 'transparency' Float
 TextureDecl      := 'texture' String
 FlagsDecl        := 'FLAG' FlagKey ('on'|'off') | 'set' '(' MaskExpr ')' | 'clear' '(' MaskExpr ')'
 GatewayDecl      := 'gateway' String 'v' V3

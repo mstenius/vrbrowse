@@ -1,0 +1,103 @@
+// DIVE .vr: Material property showcase
+// Each object demonstrates a different material property combination
+
+// 1. Dull, dark red box
+object {
+  material {
+    ambient 0.05 0.01 0.01
+    diffuse 0.3 0.05 0.05
+    emission 0.0 0.0 0.0
+    specular 0.0 0.0 0.0
+    spec_power 0.0
+    transparency 0.0
+  }
+  view {
+    RBOX v -0.8 -0.8 -0.8 v 0.8 0.8 0.8
+    material_index 0
+  }
+}
+
+// 2. Bright, shiny green sphere
+object {
+  translation v -2 0 0
+  material {
+    ambient 0.1 0.3 0.1
+    diffuse 0.2 0.8 0.2
+    emission 0.0 0.0 0.0
+    specular 1.0 1.0 1.0
+    spec_power 1.0
+    transparency 0.0
+  }
+  view {
+    SPHERE 0.5 0.5 0.5
+    material_index 0
+  }
+}
+
+// 3. Blue, highly emissive sphere (glows regardless of lighting)
+object {
+  translation v 0 2 0
+  material {
+    ambient 0.05 0.05 0.2
+    diffuse 0.1 0.1 0.6
+    emission 0.0 0.0 1.0
+    specular 0.0 0.0 0.0
+    spec_power 0.0
+    transparency 0.0
+  }
+  view {
+    SPHERE 0.5 0.5 0.5
+    material_index 0
+  }
+}
+
+// 4. Yellow, transparent, glossy box
+object {
+  translation v 2 0 0
+  material {
+    ambient 0.2 0.2 0.05
+    diffuse 0.9 0.9 0.2
+    emission 0.0 0.0 0.0
+    specular 0.8 0.8 0.2
+    spec_power 1.0
+    transparency 0.5
+  }
+  view {
+    RBOX v -0.5 -0.5 -0.5 v 0.5 0.5 0.5
+    material_index 0
+  }
+}
+
+// 5. White, fully emissive, almost fully transparent sphere
+object {
+  translation v 4 0 0
+  material {
+    ambient 0.0 0.0 0.0
+    diffuse 0.0 0.0 0.0
+    emission 1.0 1.0 1.0
+    specular 0.0 0.0 0.0
+    spec_power 0.0
+    transparency 0.9
+  }
+  view {
+    SPHERE 0.5 0.5 0.5
+    material_index 0
+  }
+}
+
+// 6. Magenta, semi-transparent, medium specular box
+object {
+  translation v -4 0 0
+  material {
+    ambient 0.2 0.05 0.2
+    diffuse 0.8 0.2 0.8
+    emission 0.0 0.0 0.0
+    specular 0.5 0.2 0.5
+    spec_power 0.25
+    transparency 0.4
+  }
+  view {
+    RBOX v -0.5 -0.5 -0.5 v 0.5 0.5 0.5
+    material_index 0
+  }
+}
