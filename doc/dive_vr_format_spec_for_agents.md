@@ -382,12 +382,14 @@ Switch           := 'switch' '{'
                     FlagsDecl* InlineDecl* ( View | ObjectNode )*
                     '}'
 
-View             := 'view' '{'
+View             := 'view' [ ViewIndex ] '{'
                     [ 'name' String ] [ 'material_index' Int ]
                     [ 'texture_index' Int ] [ 'texture_mode' TexMode ]
                     ViewFlags*
                     ViewPrim
                     '}'
+
+ViewIndex        := Int
 
 ViewPrim         := Line | NLine | RBox | NPoly | N_M_Poly | IndexedPoly
                   | Sphere | Ellipse | Cyl | QuadGrid

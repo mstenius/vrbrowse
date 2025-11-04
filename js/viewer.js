@@ -240,6 +240,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                         // tessellate a unit sphere and scale in model matrix when drawing
                         const sph = createSphere(16, 16);
                         const gpu = uploadMeshToGPU(gl, sph);
+                        gpu.indexCount = sph.indices.length;
                         sceneGpuMeshes.push({ kind: 'sphere', gpu, rx: view.rx, ry: view.ry, rz: view.rz, material: view.material || null, transform: worldTransform });
                     } else if (view.type === 'rbox') {
                         // Store rbox views as items to be drawn using the cube geometry
@@ -479,11 +480,17 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboPos); gl.enableVertexAttribArray(attribs.aPosition); gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.vboNorm); gl.enableVertexAttribArray(attribs.aNormal); gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.ibo);
+                    // Build transform: apply object transform first, then scale for sphere size
+                    // Sphere geometry has radius 0.5, so we need to scale by 2*radius to get the desired radius
                     let M = item.transform || Mat4.identity();
-                    // apply non-uniform scale
-                    M[0] *= item.rx; M[1] *= item.rx; M[2] *= item.rx;
-                    M[4] *= item.ry; M[5] *= item.ry; M[6] *= item.ry;
-                    M[8] *= item.rz; M[9] *= item.rz; M[10] *= item.rz;
+                    // Create a scale matrix and multiply it (scale is applied in local space)
+                    const scaleM = new Float32Array([
+                        item.rx * 2, 0, 0, 0,
+                        0, item.ry * 2, 0, 0,
+                        0, 0, item.rz * 2, 0,
+                        0, 0, 0, 1
+                    ]);
+                    M = Mat4.multiply(M, scaleM);
                     gl.uniformMatrix4fv(uniforms.uModel, false, M);
                     const col = (item.material && item.material.diffuse) ? item.material.diffuse : [0.6, 0.9, 0.6];
                     gl.uniform3fv(uniforms.uColor, new Float32Array(col));

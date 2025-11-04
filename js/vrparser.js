@@ -250,7 +250,7 @@ class Parser {
         this.accept('}');
     }
 
-    parseRBox(scene, parentObject = null, material_index = null) {
+    parseRBox(scene, parentObject = null, material_index = null, view_index = null) {
         // 'RBOX' already consumed
         // Expect optional 'v' then vec then optional 'v' then vec
         // parse two vectors (each may be prefixed by 'v')
@@ -265,6 +265,7 @@ class Parser {
         const center = [(minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2];
         const size = [maxx - minx, maxy - miny, maxz - minz];
         const view = { type: 'rbox', center, size, material_index };
+        if (view_index !== null) view.view_index = view_index;
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
             if (material_index !== null && parentObject.materials[material_index]) {
                 view.material = parentObject.materials[material_index];
@@ -279,7 +280,7 @@ class Parser {
         }
     }
 
-    parseCyl(scene, parentObject = null, material_index = null) {
+    parseCyl(scene, parentObject = null, material_index = null, view_index = null) {
         // Accept optional leading 'v' center, then rx ry height [ratio] [PART_TOP|PART_BOTTOM]
         let center = [0, 0, 0];
         if (this.peekIs('ident', 'v')) {
@@ -308,6 +309,7 @@ class Parser {
         this.accept(';');
 
         const view = { type: 'cylinder', center, rx, ry, height, material_index };
+        if (view_index !== null) view.view_index = view_index;
         if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
             if (material_index !== null && parentObject.materials[material_index]) {
                 view.material = parentObject.materials[material_index];
@@ -324,6 +326,18 @@ class Parser {
 
     parseView(scene, parentObject) {
         // assume 'view' identifier already consumed
+        
+        // Per DIVE spec EBNF: View := 'view' [ ViewIndex ] '{' ...
+        // Optional view index may appear immediately after 'view' keyword, before any wrapper
+        // properties or opening brace. Example:
+        //   view 0 { RBOX ... }
+        //   view 5 material_index 0 { SPHERE ... }
+        // If present, the index is stored in the view object as view.view_index
+        let view_index = null;
+        if (this.peek().type === 'number') {
+            view_index = this.next().value;
+        }
+        
         // wrapper properties may appear before the '{', e.g. name "...", material_index N, texture_index N
         let material_index = null;
         let texture_index = null;
@@ -369,7 +383,7 @@ class Parser {
             }
 
             // If the ident is one of known primitives, stop so the following code handles them
-            if (['RBOX', 'CYL', 'SPHERE', 'indexed_poly', 'N_LINE', 'LINE', 'QUAD_GRID'].includes(this.peek().value)) {
+            if (['RBOX', 'CYL', 'SPHERE', 'indexed_poly', 'N_LINE', 'LINE', 'QUAD_GRID', 'N_POLY'].includes(this.peek().value)) {
                 break;
             }
 
@@ -391,28 +405,50 @@ class Parser {
                 if (t.type === 'ident') {
                     const value = this.next().value;
 
+                    // Handle wrapper properties that can appear inside the block too
+                    if (value === 'name') {
+                        if (this.peek().type === 'string') this.next();
+                        continue;
+                    }
+                    
+                    if (value === 'material_index') {
+                        const n = this.expect('number').value;
+                        material_index = n;
+                        continue;
+                    }
+                    
+                    if (value === 'texture_index') {
+                        const n = this.expect('number').value;
+                        texture_index = n;
+                        continue;
+                    }
+
                     if (value === 'RBOX') {
-                        this.parseRBox(scene, parentObject, material_index);
+                        this.parseRBox(scene, parentObject, material_index, view_index);
 
                     } else if (value === 'CYL') {
-                        try { this.parseCyl(scene, parentObject, material_index); } 
+                        try { this.parseCyl(scene, parentObject, material_index, view_index); } 
                         catch (e) { console.warn('CYL parse error in view:', e.message); } 
 
                     }  else if (value === 'indexed_poly') {
-                        try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject); } 
+                        try { this.parseIndexedPoly(scene, material_index, texture_index, parentObject, view_index); } 
                         catch (e) { console.warn('indexed_poly parse error in view:', e.message); }
 
                     } else if (value === 'N_LINE' || value === 'LINE') {
-                        try { this.parseLinePrimitive(scene, value.toUpperCase(), parentObject, material_index, texture_index); } 
+                        try { this.parseLinePrimitive(scene, value.toUpperCase(), parentObject, material_index, texture_index, view_index); } 
                         catch (e) { console.warn('N_LINE/LINE parse error in view:', e.message); }
 
                     } else if (value === 'SPHERE') {
-                        try { this.parseSphereInView(scene, parentObject, material_index, texture_index); }
+                        try { this.parseSphereInView(scene, parentObject, material_index, texture_index, view_index); }
                         catch (e) { console.warn('SPHERE parse error in view:', e.message); }
 
                     } else if (value === 'QUAD_GRID') {
-                        try { this.parseQuadGrid(scene, parentObject, material_index, texture_index); }
+                        try { this.parseQuadGrid(scene, parentObject, material_index, texture_index, view_index); }
                         catch (e) { console.warn('QUAD_GRID parse error in view:', e.message); }
+
+                    } else if (value === 'N_POLY') {
+                        try { this.parseNPoly(scene, parentObject, material_index, texture_index, view_index); }
+                        catch (e) { console.warn('N_POLY parse error in view:', e.message); }
 
                     } else {
                         this.skipValue();
@@ -439,17 +475,22 @@ class Parser {
             const value = this.peek().value;
             if (value === 'RBOX') {
                 this.next();
-                this.parseRBox(scene, parentObject, material_index);
+                this.parseRBox(scene, parentObject, material_index, view_index);
 
             } else if (value === 'CYL') {
                 this.next();
-                try { this.parseCyl(scene, parentObject, material_index); }
+                try { this.parseCyl(scene, parentObject, material_index, view_index); }
                 catch (e) { console.warn('CYL parse error in single-line view:', e.message); }
 
-            } else if (value === 'SPHERE') {
+            } else if (value === 'QUAD_GRID') {
                 this.next();
-                try { this.parseSphereInView(scene, parentObject, material_index, texture_index); }
-                catch (e) { console.warn('SPHERE parse error in single-line view:', e.message); }
+                try { this.parseQuadGrid(scene, parentObject, material_index, texture_index, view_index); }
+                catch (e) { console.warn('QUAD_GRID parse error in single-line view:', e.message); }
+
+            } else if (value === 'N_POLY') {
+                this.next();
+                try { this.parseNPoly(scene, parentObject, material_index, texture_index, view_index); }
+                catch (e) { console.warn('N_POLY parse error in single-line view:', e.message); }
 
             } else {
                 // else: unhandled single-line view primitive
@@ -590,7 +631,7 @@ class Parser {
     }
 
     // parse a simple sphere primitive inside a view: SPHERE rx ry rz  (or single radius)
-    parseSphereInView(scene, parentObject, material_index, texture_index) {
+    parseSphereInView(scene, parentObject, material_index, texture_index, view_index = null) {
         // read up to three numbers
         const nums = [];
         for (let k = 0; k < 3; k++) {
@@ -604,6 +645,15 @@ class Parser {
         else if (nums.length === 3) { rx = nums[0]; ry = nums[1]; rz = nums[2]; }
         // push a sphere descriptor as a view in the parent object
         const view = { type: 'sphere', rx, ry, rz, material_index, texture_index };
+        if (view_index !== null) view.view_index = view_index;
+        if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
+            if (material_index !== null && parentObject.materials[material_index]) {
+                view.material = parentObject.materials[material_index];
+            }
+            else {
+                view.material = parentObject.materials[0];
+            }
+        }
         if (parentObject) {
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
@@ -611,7 +661,7 @@ class Parser {
     }
 
     // parse QUAD_GRID NX NY v p0 v p1 v p2 v p3
-    parseQuadGrid(scene, parentObject, material_index, texture_index) {
+    parseQuadGrid(scene, parentObject, material_index, texture_index, view_index = null) {
         // expect two ints
         const nxTok = this.expect('number'); const nyTok = this.expect('number');
         const nx = nxTok.value | 0; const ny = nyTok.value | 0;
@@ -646,6 +696,57 @@ class Parser {
             }
         }
         const view = { type: 'mesh', positions, indices, material_index, texture_index };
+        if (view_index !== null) view.view_index = view_index;
+        if (parentObject) {
+            parentObject.views = parentObject.views || [];
+            parentObject.views.push(view);
+        }
+    }
+
+    // parse N_POLY N v x y z [t u v] ...
+    parseNPoly(scene, parentObject, material_index, texture_index, view_index = null) {
+        // expect count
+        const countTok = this.expect('number');
+        const count = countTok.value | 0;
+        if (count < 3) {
+            console.warn('N_POLY: need at least 3 vertices, got', count);
+            return;
+        }
+        
+        const positions = [];
+        const texcoords = [];
+        let hasTexcoords = false;
+        
+        // read N vertices
+        for (let i = 0; i < count; i++) {
+            // expect 'v' x y z
+            const pos = this.parseVector();
+            positions.push(pos[0], pos[1], pos[2]);
+            
+            // optional 't' u v
+            if (this.peekIs('ident', 't')) {
+                this.next(); // consume 't'
+                const u = this.expect('number').value;
+                const v = this.expect('number').value;
+                texcoords.push(u, v);
+                hasTexcoords = true;
+            } else if (hasTexcoords) {
+                // if previous vertices had texcoords, add default for consistency
+                texcoords.push(0, 0);
+            }
+        }
+        
+        // triangulate the polygon using a simple fan from vertex 0
+        const indices = [];
+        for (let i = 1; i < count - 1; i++) {
+            indices.push(0, i, i + 1);
+        }
+        
+        const view = { type: 'mesh', positions, indices, material_index, texture_index };
+        if (view_index !== null) view.view_index = view_index;
+        if (hasTexcoords && texcoords.length === (count * 2)) {
+            view.texcoords = texcoords;
+        }
         if (parentObject) {
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
@@ -653,7 +754,7 @@ class Parser {
     }
 
     // parse N_LINE / LINE primitives inside a view
-    parseLinePrimitive(scene, kind, parentObject, material_index, texture_index) {
+    parseLinePrimitive(scene, kind, parentObject, material_index, texture_index, view_index = null) {
         // If kind == 'N_LINE' the next token may be a count
         let count = null;
         if (kind === 'N_LINE' && this.peek().type === 'number') { count = this.next().value | 0; }
@@ -669,6 +770,7 @@ class Parser {
         const vcount = verts.length / 3;
         for (let i = 0; i < vcount - 1; i++) indices.push(i, i + 1);
         const view = { type: 'lines', positions: verts, indices, material_index, texture_index };
+        if (view_index !== null) view.view_index = view_index;
         if (parentObject) {
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
@@ -676,12 +778,14 @@ class Parser {
     }
 
     // parse indexed_poly { ... } minimal support: vertexlist & polylist
-    parseIndexedPoly(scene, material_index, texture_index, parentObject) {
+    parseIndexedPoly(scene, material_index, texture_index, parentObject, view_index = null) {
         // parseIndexedPoly entered
         // after 'indexed_poly' we expect prim type and optional flags (skip them)
         if (this.peek().type === 'ident') this.next(); // PRIM_TYPE
-        // skip until block
-        if (this.peek().type === '{') this.next();
+        // skip any additional flags/numbers until we hit a known list keyword
+        while (this.peek().type === 'number' || (this.peek().type === 'ident' && !['vertexlist', 'normallist', 'texturelist', 'polylist', 'normalindexlist', 'textureindexlist', 'materiallist', 'colourlist'].includes(this.peek().value.toLowerCase()))) {
+            this.next();
+        }
         const vertices = [];
         const normallist = [];
         const texturelist = [];
@@ -793,7 +897,7 @@ class Parser {
                 this.next();
             }
         }
-        this.accept('}');
+        // Don't consume closing brace - that belongs to the view block
 
         // Helper: compute polygon normal via Newell's method
         const computeNormalNewell = (pts) => {
@@ -905,6 +1009,7 @@ class Parser {
         }
 
         const view = { type: 'mesh', positions: outPositions, indices: outIndices, material_index, texture_index };
+        if (view_index !== null) view.view_index = view_index;
         if (outNormals.some(v => v !== 0)) view.normals = outNormals;
         if (outTexcoords.some(v => v !== 0)) view.texcoords = outTexcoords;
         // resolve material/texture strings from parentObject if available
@@ -972,6 +1077,7 @@ export function parseVrIntoScene(theScene, text) {
     } catch (e) {
         // report fatal parse error to console.error (kept minimal)
         console.error('parseVrIntoScene: fatal parse error', e && e.message);
+        console.error('Stack:', e && e.stack);
     }
 
     // Post-process parsed objects and ensure each object has at least one
