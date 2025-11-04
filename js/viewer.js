@@ -272,7 +272,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     let scene = emtpyScene();
 
     // Camera
-    const cam = { pos: [0, 0, 3], yaw: 0, pitch: 0 };
+    // Camera: add 1.8m Y offset to simulate eye height above ground
+    const cam = { pos: [0, 1.8, 3], yaw: 0, pitch: 0 };
     const keys = {};
     let dragging = false, lastMouse = [0, 0];
     let isPointerLocked = false;
@@ -511,6 +512,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         reader.onload = ev => {
             scene = parseVrIntoScene(emtpyScene(), ev.target.result);
             cam.pos = scene.world.start.slice();
+            // Add 1.8m Y offset to camera position for eye height
+            if (cam.pos.length >= 2) cam.pos[1] += 1.8;
             // upload meshes parsed from the scene into GPU buffers
             try { uploadSceneMeshes(scene); } catch (e) { console.warn('uploadSceneMeshes failed', e); }
         };
@@ -524,6 +527,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         bindControls();
         resize();
         cam.pos = scene.world.start.slice();
+        // Add 1.8m Y offset to camera position for eye height
+        if (cam.pos.length >= 2) cam.pos[1] += 1.8;
         requestAnimationFrame(frame);
     }
 
