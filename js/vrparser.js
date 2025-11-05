@@ -99,8 +99,9 @@ export function debugTokens(text) {
 
 // --- Parser -----------------------------------------------------------------
 class Parser {
-    constructor(tokens) {
+    constructor(tokens, materials = {}) {
         this.tokens = tokens; this.i = 0;
+        this.materials = materials;
     }
 
     peek(n = 0) {
@@ -530,17 +531,21 @@ class Parser {
                 if (id === 'material') {
                     // three forms: material "NAME" | material rgb r g b | material { ... }
                     if (this.peek().type === 'string') {
-                        const nm = this.next().value;
-                        // TODO: Should be looked up later or filled in here from material library
-                        obj.materials.push({
-                            name: nm,
-                            ambient: [0.0, 0.0, 0.0],
-                            diffuse: [0.8, 0.8, 0.8],
-                            emission: [0.0, 0.0, 0.0],
-                            specular: [0.0, 0.0, 0.0],
-                            spec_power: 0.0,
-                            transparency: 0.0
-                        });
+                        const nm = this.next().value.toUpperCase();
+                        if (this.materials[nm]) {
+                            obj.materials.push({ ...this.materials[nm], name: nm });
+                        } else {
+                            // TODO: Should be looked up later or filled in here from material library
+                            obj.materials.push({
+                                name: nm,
+                                ambient: [0.0, 0.0, 0.0],
+                                diffuse: [0.8, 0.8, 0.8],
+                                emission: [0.0, 0.0, 0.0],
+                                specular: [0.0, 0.0, 0.0],
+                                spec_power: 0.0,
+                                transparency: 0.0
+                            });
+                        }
                     } else if (this.peek().type === 'ident' && this.peek().value.toLowerCase() === 'rgb') {
                         this.next();
                         const r = this.expect('number').value;
@@ -1116,10 +1121,10 @@ class Parser {
 }
 
 // Public API
-export function parseVrIntoScene(theScene, text) {
+export function parseVrIntoScene(theScene, text, materials = {}) {
     try {
         const tokens = tokenize(text);
-        const parser = new Parser(tokens);
+        const parser = new Parser(tokens, materials);
         parser.parseTopLevel(theScene);
     } catch (e) {
         // report fatal parse error to console.error (kept minimal)

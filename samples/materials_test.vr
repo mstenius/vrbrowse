@@ -1,0 +1,86 @@
+world {
+    start v 0 1.8 10
+    background 0.1 0.1 0.2
+    fog 0.1
+    position v -10 10 -5
+}
+
+object {
+    material "RED"
+    view {
+        RBOX v -1 -1 -1 v 1 1 1
+    }
+    translation v -6 0 0
+}
+
+object {
+    material "GREEN"
+    view {
+        SPHERE 1
+    }
+    translation v -3 0 0
+}
+
+object {
+    material "BLUE"
+    view {
+        CYL v 0 -1 0 0.5 0.5 2
+    }
+    translation v 0 0 0
+}
+
+object {
+    material "GOLD"
+    view {
+        RBOX v -0.5 -0.5 -0.5 v 0.5 0.5 0.5
+    }
+    translation v 3 0 0
+}
+
+object {
+    material "SILVER"
+    view {
+        SPHERE 0.8
+    }
+    translation v 6 0 0
+}
+
+object {
+    material "GLASS"
+    view {
+        SPHERE 1.2
+    }
+    translation v -4.5 -3 0
+}
+
+object {
+    material "EMERALD"
+    view {
+        indexed_poly {
+            vertexlist {
+                -2,0,0, 2,0,0, 0,2,0
+            }
+            polylist {
+                0,1,2,-1
+            }
+        }
+    }
+    translation v 0 -3 0
+}
+
+object {
+    material "RUBY"
+    view {
+        SPHERE 1
+    }
+    translation v 4.5 -3 0
+}
+
+object {
+    name "floor"
+    material "STEEL_BLUE"
+    view {
+        RBOX v -20 -0.1 -20 v 20 0.1 20
+    }
+    translation v 0 -2 0
+}

@@ -343,6 +343,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
 
     // Scene: boxes and world settings (from parser module)
     let scene = emtpyScene();
+    let materials = {};
 
     // Camera
     // Camera: add 1.8m Y offset to simulate eye height above ground
@@ -620,7 +621,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         if (!f) return;
         const reader = new FileReader();
         reader.onload = ev => {
-            scene = parseVrIntoScene(emtpyScene(), ev.target.result);
+            scene = parseVrIntoScene(emtpyScene(), ev.target.result, materials);
             cam.pos = scene.world.start.slice();
             // Add 1.8m Y offset to camera position for eye height
             if (cam.pos.length >= 2) cam.pos[1] += 1.8;
@@ -639,6 +640,16 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         cam.pos = scene.world.start.slice();
         // Add 1.8m Y offset to camera position for eye height
         if (cam.pos.length >= 2) cam.pos[1] += 1.8;
+
+        // Load materials
+        fetch('materials.json')
+            .then(response => response.json())
+            .then(data => {
+                materials = data;
+                console.log('Materials loaded:', materials);
+            })
+            .catch(error => console.error('Error loading materials:', error));
+
         requestAnimationFrame(frame);
     }
 
