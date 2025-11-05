@@ -1,6 +1,6 @@
 // Minimal WebGL .vr viewer
 
-import { emtpyScene, parseVrIntoScene } from './vrparser.js';
+import { parseVrIntoScene } from './vrparser.js';
 import { Mat4, degToRad } from './mat4.js';
 import { initGL as createGL, createProgram, enableDepth, setViewportIfNeeded, createBuffer } from './gl.js';
 import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geometry.js';
@@ -35,19 +35,25 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             return;
         }
         const vs = `attribute vec3 aPosition;attribute vec3 aNormal;attribute vec2 aTexCoord;uniform mat4 uModel;uniform mat4 uViewProj;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;void main(){vNormal = mat3(uModel)*aNormal; vPos=(uModel*vec4(aPosition,1.0)).xyz; vTexCoord = aTexCoord; gl_Position = uViewProj * uModel * vec4(aPosition,1.0);} `;
-        const fs = `precision mediump float;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;uniform vec3 uColor;uniform vec3 uAmbient;uniform vec3 uEmission;uniform vec3 uSpecular;uniform float uSpecPower;uniform float uTransparency;uniform vec3 uLightDir;uniform sampler2D uTexture;uniform int uUseTexture;void main(){
+        const fs = `precision mediump float;varying vec3 vNormal;varying vec3 vPos;varying vec2 vTexCoord;uniform vec3 uColor;uniform vec3 uAmbient;uniform vec3 uEmission;uniform vec3 uSpecular;uniform float uSpecPower;uniform float uTransparency;uniform vec3 uLightDir;uniform vec3 uLightPos;uniform vec3 uLightColor;uniform vec3 uWorldAmbient;uniform float uFogIntensity;uniform vec3 uFogColor;uniform vec3 uCameraPos;uniform sampler2D uTexture;uniform int uUseTexture;void main(){
     vec3 N = normalize(vNormal);
-    vec3 L = normalize(-uLightDir);
-    vec3 V = normalize(-vPos);
+    vec3 L;
+    // Use light position if provided, otherwise use directional light
+    if(length(uLightPos) > 0.0) {
+        L = normalize(uLightPos - vPos);
+    } else {
+        L = normalize(-uLightDir);
+    }
+    vec3 V = normalize(uCameraPos - vPos);
     float diff = max(dot(N, L), 0.0);
-    vec3 diffuse = uColor * diff;
-    vec3 ambient = uAmbient;
+    vec3 diffuse = uColor * diff * uLightColor;
+    vec3 ambient = uAmbient * uWorldAmbient;
     vec3 emission = uEmission;
     vec3 specular = vec3(0.0);
     if(uSpecPower > 0.0 && diff > 0.0){
         vec3 R = reflect(-L, N);
         float s = pow(max(dot(R, V), 0.0), uSpecPower);
-        specular = uSpecular * s;
+        specular = uSpecular * s * uLightColor;
     }
     vec3 base = ambient + diffuse + specular;
     if(uUseTexture==1){
@@ -56,6 +62,15 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     }
     // Add emission as additive (not affected by lighting)
     vec3 finalCol = base + emission;
+    
+    // Apply fog
+    if(uFogIntensity > 0.0) {
+        float dist = length(vPos - uCameraPos);
+        float fogFactor = 1.0 - exp(-uFogIntensity * dist * 0.1);
+        fogFactor = clamp(fogFactor, 0.0, 1.0);
+        finalCol = mix(finalCol, uFogColor, fogFactor);
+    }
+    
     float alpha = 1.0 - clamp(uTransparency, 0.0, 1.0);
     gl_FragColor = vec4(finalCol, alpha);
     if(alpha < 1.0) {
@@ -75,6 +90,12 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     uniforms.uSpecPower = gl.getUniformLocation(prog, 'uSpecPower');
     uniforms.uTransparency = gl.getUniformLocation(prog, 'uTransparency');
     uniforms.uLightDir = gl.getUniformLocation(prog, 'uLightDir');
+    uniforms.uLightPos = gl.getUniformLocation(prog, 'uLightPos');
+    uniforms.uLightColor = gl.getUniformLocation(prog, 'uLightColor');
+    uniforms.uWorldAmbient = gl.getUniformLocation(prog, 'uWorldAmbient');
+    uniforms.uFogIntensity = gl.getUniformLocation(prog, 'uFogIntensity');
+    uniforms.uFogColor = gl.getUniformLocation(prog, 'uFogColor');
+    uniforms.uCameraPos = gl.getUniformLocation(prog, 'uCameraPos');
     uniforms.uTexture = gl.getUniformLocation(prog, 'uTexture');
     uniforms.uUseTexture = gl.getUniformLocation(prog, 'uUseTexture');
     // Enable blending for transparency
@@ -302,6 +323,24 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         console.log('uploadSceneMeshes: uploaded', sceneGpuMeshes.length, 'views');
     }
 
+    function emtpyScene() {
+        return {
+            world: {
+                start: [0, 0, 0],
+                info: '',
+                background: [0.25, 0.25, 0.25],
+                fog: 0.0,                       // fog intensity 0-1
+                terrain: '',                    // URL to terrain file
+                color: [1.0, 1.0, 1.0],         // world light color
+                ambient: [0.6, 0.6, 0.6],       // world light ambient
+                position: [-3.0, 2.0, -1.0],    // world light pos; default (-3,2,-1)
+                // far_clip: MAX_Z,
+                // near_clip: MIN_Z,
+            },
+            objects: [], // Top-level objects, each containing views (geometry)
+        };
+    }
+
     // Scene: boxes and world settings (from parser module)
     let scene = emtpyScene();
 
@@ -418,7 +457,20 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         gl.clearColor(scene.world.background[0], scene.world.background[1], scene.world.background[2], 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.useProgram(prog);
+        
+        // Set world light properties
         gl.uniform3fv(uniforms.uLightDir, new Float32Array([0.5, 0.7, 0.4]));
+        gl.uniform3fv(uniforms.uLightPos, new Float32Array(scene.world.position || [-3.0, 2.0, -1.0]));
+        gl.uniform3fv(uniforms.uLightColor, new Float32Array(scene.world.color || [1.0, 1.0, 1.0]));
+        gl.uniform3fv(uniforms.uWorldAmbient, new Float32Array(scene.world.ambient || [0.6, 0.6, 0.6]));
+        
+        // Set fog properties
+        const fogIntensity = (scene.world.fog !== undefined) ? scene.world.fog : 0.0;
+        gl.uniform1f(uniforms.uFogIntensity, fogIntensity);
+        gl.uniform3fv(uniforms.uFogColor, new Float32Array(scene.world.background));
+        
+        // Set camera position for fog and specular calculations
+        gl.uniform3fv(uniforms.uCameraPos, new Float32Array(cam.pos));
 
         const aspect = canvas.width / canvas.height;
         const proj = Mat4.perspective(60 * Math.PI / 180, aspect, 0.1, 1000);

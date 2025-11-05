@@ -1,21 +1,6 @@
-// Small module that contains .vr parsing utilities
-
-export function emtpyScene() {
-    return {
-        world: {
-            background: [0.2, 0.2, 0.25],
-            start: [0, 0, 3]
-        },
-        objects: [], // Top-level objects, each containing views (geometry)
-    };
-}
-
 // Structured, small parser for a subset of the DIVE .vr format.
 // - Follows a tokenization + recursive-descent approach for maintainability.
-// - Currently supports: world { background R G B; start v X Y Z } and
-//   RBOX v x0 y0 z0 v x1 y1 z1 (anywhere in the file).
-// - The parser is intentionally conservative and easy to extend: add new
-//   parseXYZ() methods and wire them into parseTopLevelToken.
+// - The parser is intentionally conservative and easy to extend.
 
 // --- Tokenizer --------------------------------------------------------------
 function removeComments(input) {
@@ -235,6 +220,30 @@ class Parser {
                     // expect a vector (may be prefixed by 'v')
                     const vec = this.parseVector();
                     scene.world.start = vec;
+                } else if (key === 'fog') {
+                    // single number (0-1)
+                    const fog = this.expect('number').value;
+                    scene.world.fog = fog;
+                    console.log(`World fog set to: ${fog}`);
+                } else if (key === 'color') {
+                    // world light color RGB
+                    const r = this.expect('number').value;
+                    const g = this.expect('number').value;
+                    const b = this.expect('number').value;
+                    scene.world.color = [r, g, b];
+                    console.log(`World light color set to: [${r}, ${g}, ${b}]`);
+                } else if (key === 'ambient') {
+                    // world light ambient RGB
+                    const r = this.expect('number').value;
+                    const g = this.expect('number').value;
+                    const b = this.expect('number').value;
+                    scene.world.ambient = [r, g, b];
+                    console.log(`World ambient set to: [${r}, ${g}, ${b}]`);
+                } else if (key === 'position') {
+                    // world light position (may be prefixed by 'v')
+                    const vec = this.parseVector();
+                    scene.world.position = vec;
+                    console.log(`World light position set to: [${vec[0]}, ${vec[1]}, ${vec[2]}]`);
                 } else {
                     // unknown world property: skip a single value (string/number/vector) or a block
                     // This is just a cushion until we have all expected world properties implemented

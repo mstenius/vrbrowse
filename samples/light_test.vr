@@ -1,0 +1,69 @@
+world "light_test" {
+  info "Test world with custom light color and position"
+  background 0.1 0.1 0.15
+  start v 0 1.8 8
+  fog 0.0
+  color 1.0 0.8 0.6
+  ambient 0.2 0.2 0.3
+  position v 5.0 4.0 2.0
+}
+
+object {
+  name "center_sphere"
+  material {
+    diffuse 0.8 0.8 0.8
+    ambient 0.1 0.1 0.1
+    specular 1.0 1.0 1.0
+    spec_power 0.8
+  }
+  view {
+    SPHERE 1.5 1.5 1.5
+  }
+}
+
+object {
+  name "left_box"
+  material {
+    diffuse 0.9 0.2 0.2
+    ambient 0.1 0.05 0.05
+  }
+  translation v -4 0 0
+  view {
+    RBOX v -1 0 -1 v 1 2 1
+  }
+}
+
+object {
+  name "right_box"
+  material {
+    diffuse 0.2 0.2 0.9
+    ambient 0.05 0.05 0.1
+  }
+  translation v 4 0 0
+  view {
+    RBOX v -1 0 -1 v 1 2 1
+  }
+}
+
+object {
+  name "back_cylinder"
+  material {
+    diffuse 0.2 0.9 0.2
+    ambient 0.05 0.1 0.05
+  }
+  translation v 0 0 -4
+  view {
+    CYL 0.5 0.5 2
+  }
+}
+
+object {
+  name "ground_plane"
+  material {
+    diffuse 0.3 0.3 0.35
+    ambient 0.15 0.15 0.2
+  }
+  view {
+    RBOX v -20 -0.1 -20 v 20 0 20
+  }
+}
