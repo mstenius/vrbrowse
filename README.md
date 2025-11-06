@@ -32,23 +32,38 @@ there. But that is another story.
 
 ## Status
 
-The current state is rudimentary — very basic functionality, local to a web browser only.
-
 Implemented so far:
 
 - Simple 3D viewer with mouse look and WASD navigation
 - Parsing of the world declaration and boxes, spheres, cylinders, etc
+- Loading worlds from URLs with relative paths etc
+- Gateways
+- Basic material definitions
 
 Ongoing now:
 
-- Materials started
+- Debugging
 - Filling in remaining view types
-- Sorting out the mushy but semi-functional parser draft I got from Copilot
+- Usability enhancements
+- Improving gateways
 
 ## Running
 
 To run locally, either just load the files into a web browser that supports JavaScript and WebGL or
 serve the files statically using your favourite web server and do the same.
+
+## Samples
+
+There are several sample `.vr` files in `samples/`.
+
+You can deep-link directly by appending `?src=PATH_OR_URL` to `index.html`, for example:
+
+```
+index.html?src=samples/views_examples.vr
+```
+
+Inside worlds, portals are declared as object-level `gateway "TARGET" v X Y Z`.
+Relative targets without an extension will be resolved against the loaded world’s URL and `.vr` will be appended.
 
 ## References
 
