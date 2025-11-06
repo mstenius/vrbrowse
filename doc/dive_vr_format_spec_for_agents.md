@@ -357,13 +357,15 @@ WorldProp        := 'start' 'v' Float Float Float
 
 ObjectNode       := Object | Billboard | Lod | Switch
 
+SubObjectNode    := ['subs'] ObjectNode
+
 Object           := 'object' '{'
                     [ 'id' Int ] [ 'name' String ]
                     MaterialDecl* TextureDecl* FlagsDecl*
                     [ GatewayDecl ] Transformation*
                     PropertyDecl* MethodDecl* LightDecl*
                     InlineDecl* [ LegacyLODDecl ]
-                    ( View | ObjectNode )*
+                    ( View | SubObjectNode )*
                     '}'
 
 Billboard        := 'billboard' '{'

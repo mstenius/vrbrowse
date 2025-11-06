@@ -509,6 +509,34 @@ class Parser {
         }
     }
 
+    // Handle child nodes inside an object, with optional leading 'subs'
+    handleChildNode(scene, obj, firstKwLower) {
+        // firstKwLower has already been consumed by caller
+        let kw = firstKwLower;
+        if (kw === 'subs') {
+            const next = this.peek();
+            if (next.type !== 'ident') { this.skipValue(); this.accept(';'); return; }
+            kw = this.next().value.toLowerCase(); // consume the actual child keyword
+        }
+        if (kw === 'view') {
+            try { this.parseView(scene, obj); }
+            catch (e) { console.warn('View parse error in object:', e && e.message); this.skipBlock(); }
+            return;
+        }
+        if (kw === 'object') {
+            try { const childObj = this.parseObject(scene, obj); obj.children.push(childObj); }
+            catch (e) { console.warn('Nested object parse error:', e && e.message); this.skipBlock(); }
+            return;
+        }
+        if (kw === 'billboard' || kw === 'lod' || kw === 'switch') {
+            // Not implemented yet; skip their blocks safely
+            if (this.peek().type === '{') this.skipBlock(); else { this.skipValue(); this.accept(';'); }
+            return;
+        }
+        // Unknown after (optional) 'subs' → skip
+        if (this.peek().type === '{') this.skipBlock(); else { this.skipValue(); this.accept(';'); }
+    }
+
     // Parse an object block: collect materials and textures and parse child views/objects
     parseObject(scene, parentObj = null) {
         // assume 'object' identifier already consumed
@@ -632,24 +660,10 @@ class Parser {
                     obj.transforms.push({ type: 'rotation', value: [v1, v2, v3] });
                     continue;
                 }
-                if (id === 'view') { 
-                    try {
-                        this.parseView(scene, obj);
-                    }
-                    catch (e) {
-                        console.warn('View parse error in object:', e && e.message);
-                        this.skipBlock(false);
-                    } 
-                    continue; 
-                }
-                if (id === 'object') {
-                    try {
-                        const childObj = this.parseObject(scene, obj);
-                        obj.children.push(childObj);
-                    } catch (e) {
-                        console.warn('Nested object parse error:', e && e.message);
-                        this.skipBlock(false);
-                    }
+
+                // Unified handling for child nodes, with optional 'subs' prefix
+                if (id === 'view' || id === 'object' || id === 'subs') {
+                    this.handleChildNode(scene, obj, id);
                     continue;
                 }
 
