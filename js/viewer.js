@@ -8,6 +8,10 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
 (function () {
     const canvas = document.getElementById('glcanvas');
     const fileInput = document.getElementById('fileInput');
+    const urlInput = document.getElementById('urlInput');
+    const loadUrlBtn = document.getElementById('loadUrlBtn');
+    const gatewaySelect = document.getElementById('gatewaySelect');
+    const enterGatewayBtn = document.getElementById('enterGatewayBtn');
 
     // Resize canvas to fill
     function resize() {
@@ -25,6 +29,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     let prog = null;
     let attribs = {}, uniforms = {};
     let defaultTexture = null;
+    // Base URL of currently loaded .vr file, used to resolve relative assets (textures, includes later)
+    let sceneBaseUrl = null;
 
     function initGL() {
         try {
@@ -124,6 +130,10 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     let cylVboPos = null, cylVboNorm = null, cylIbo = null, cylIndexCount = 0;
     // dynamically loaded meshes from parsed scenes
     let sceneGpuMeshes = [];
+    // Gateway triggers computed from objects with gateway declarations
+    let gatewayTriggers = [];
+    const gatewayInside = new Set();
+    let gatewayCooldownUntil = 0;
 
     function uploadGeometry() {
         const mesh = createCube();
@@ -190,10 +200,19 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         sceneGpuMeshes = [];
     }
 
+    function transformPoint(m, p) {
+        return [
+            p[0] * m[0] + p[1] * m[4] + p[2] * m[8] + m[12],
+            p[0] * m[1] + p[1] * m[5] + p[2] * m[9] + m[13],
+            p[0] * m[2] + p[1] * m[6] + p[2] * m[10] + m[14]
+        ];
+    }
+
     function uploadSceneMeshes(scene) {
         if (!gl) return;
         disposeSceneGpu();
         sceneGpuMeshes = [];
+        gatewayTriggers = [];
         if (!scene.objects) return;
         
         // Helper to recursively process objects and their children
@@ -220,6 +239,25 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             const worldTransform = parentTransform ? Mat4.multiply(parentTransform, localTransform) : localTransform;
             
             // Process views in this object
+            // Also aggregate simple bounds for gateway triggers
+            let aggMin = [ Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY ];
+            let aggMax = [ Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY ];
+            function addSphereAABB(center, radius) {
+                aggMin[0] = Math.min(aggMin[0], center[0] - radius);
+                aggMin[1] = Math.min(aggMin[1], center[1] - radius);
+                aggMin[2] = Math.min(aggMin[2], center[2] - radius);
+                aggMax[0] = Math.max(aggMax[0], center[0] + radius);
+                aggMax[1] = Math.max(aggMax[1], center[1] + radius);
+                aggMax[2] = Math.max(aggMax[2], center[2] + radius);
+            }
+            function addPointToAABB(pt) {
+                aggMin[0] = Math.min(aggMin[0], pt[0]);
+                aggMin[1] = Math.min(aggMin[1], pt[1]);
+                aggMin[2] = Math.min(aggMin[2], pt[2]);
+                aggMax[0] = Math.max(aggMax[0], pt[0]);
+                aggMax[1] = Math.max(aggMax[1], pt[1]);
+                aggMax[2] = Math.max(aggMax[2], pt[2]);
+            }
             if (obj.views) {
                 for (const view of obj.views) {
                     if (view.type === 'mesh') {
@@ -278,10 +316,21 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                                 } catch (e) { console.warn('texture creation failed for', item.texturePath, e); }
                             };
                             img.onerror = () => { console.warn('Failed to load texture:', item.texturePath); };
-                            // resolve relative paths against current location
-                            try { img.src = view.texture; } catch (e) { console.warn('setting texture src failed', e); }
+                            // resolve relative paths against scene base URL if available
+                            try {
+                                const resolved = sceneBaseUrl ? new URL(item.texturePath, sceneBaseUrl).toString() : item.texturePath;
+                                img.src = resolved;
+                            } catch (e) { console.warn('setting texture src failed', e); }
                         }
                         sceneGpuMeshes.push(item);
+                        // If this mesh originated from an N_POLY, use its vertices to expand gateway bounds
+                        if (view.source === 'N_POLY') {
+                            const M = worldTransform;
+                            for (let vi = 0; vi < positions.length; vi += 3) {
+                                const pt = transformPoint(M, [positions[vi], positions[vi+1], positions[vi+2]]);
+                                addPointToAABB(pt);
+                            }
+                        }
                     } else if (view.type === 'lines') {
                         const positions = new Float32Array(view.positions);
                         const indices = new Uint16Array(view.indices);
@@ -291,6 +340,11 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                         const vboNorm = createBuffer(gl, normals, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
                         const ibo = createBuffer(gl, indices, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
                         sceneGpuMeshes.push({ kind: 'lines', vboPos, vboNorm, ibo, indexCount: indices.length, material: view.material || null, transform: worldTransform });
+                        // Expand gateway bounds with line segment endpoints (treat as thin areas)
+                        for (let vi = 0; vi < positions.length; vi += 3) {
+                            const pt = transformPoint(worldTransform, [positions[vi], positions[vi+1], positions[vi+2]]);
+                            addPointToAABB(pt);
+                        }
                     } else if (view.type === 'sphere') {
                         // tessellate a unit sphere and scale in model matrix when drawing
                         const sph = createSphere(16, 16);
@@ -300,9 +354,22 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     } else if (view.type === 'rbox') {
                         // Store rbox views as items to be drawn using the cube geometry
                         sceneGpuMeshes.push({ kind: 'rbox', center: view.center, size: view.size, material: view.material || null, transform: worldTransform });
+                        // Bounds contribution for gateway triggers (transform 8 corners)
+                        const hx = view.size[0] * 0.5, hy = view.size[1] * 0.5, hz = view.size[2] * 0.5;
+                        const M = Mat4.translate(worldTransform, view.center);
+                        const corners = [
+                            [ -hx, -hy, -hz ], [ hx, -hy, -hz ], [ hx, hy, -hz ], [ -hx, hy, -hz ],
+                            [ -hx, -hy, hz ], [ hx, -hy, hz ], [ hx, hy, hz ], [ -hx, hy, hz ]
+                        ];
+                        for (const c of corners) addPointToAABB(transformPoint(M, c));
                     } else if (view.type === 'cylinder') {
                         // Store cylinder views
                         sceneGpuMeshes.push({ kind: 'cylinder', center: view.center, rx: view.rx, ry: view.ry, height: view.height, material: view.material || null, transform: worldTransform });
+                        // Approximate contribution by sphere that encloses cylinder
+                        const centerW = transformPoint(worldTransform, view.center);
+                        const hx = view.rx, hy = view.height * 0.5, hz = view.ry;
+                        const r = Math.hypot(hx, hy, hz);
+                        addSphereAABB(centerW, r);
                     } else if (view.type === 'quad_grid') {
                         // QUAD_GRID: four corners given as polygon order p0,p1,p2,p3
                         // Generate exactly nx (u-direction) and ny (v-direction) lines using bilinear interpolation.
@@ -364,6 +431,27 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                             material: view.material || null,
                             transform: worldTransform
                         });
+                        // Add quad corners to gateway AABB
+                        if (view.corners && view.corners.length === 4) {
+                            for (const c of view.corners) {
+                                addPointToAABB(transformPoint(worldTransform, c));
+                            }
+                        }
+                    }
+                }
+            }
+            // If object has gateways, compute trigger from aggregated AABB
+            if (obj.gateways && obj.gateways.length > 0) {
+                const hasAABB = Number.isFinite(aggMin[0]) && Number.isFinite(aggMax[0]);
+                if (hasAABB) {
+                    const c = [ (aggMin[0] + aggMax[0]) * 0.5, (aggMin[1] + aggMax[1]) * 0.5, (aggMin[2] + aggMax[2]) * 0.5 ];
+                    const dx = (aggMax[0] - aggMin[0]) * 0.5;
+                    const dy = (aggMax[1] - aggMin[1]) * 0.5;
+                    const dz = (aggMax[2] - aggMin[2]) * 0.5;
+                    const r = Math.hypot(dx, dy, dz) || 1.0;
+                    for (const gw of obj.gateways) {
+                        const url = resolveGatewayTarget(gw.target);
+                        gatewayTriggers.push({ center: c, radius: r, resolvedUrl: url, start: gw.start, objectName: obj.name || '' });
                     }
                 }
             }
@@ -405,6 +493,125 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     // Scene: boxes and world settings (from parser module)
     let scene = emtpyScene();
     let materials = {};
+    
+    // Helper to set scene from text and upload
+    function setSceneFromText(text, baseUrl, startOverride /* optional vec3 */) {
+        try {
+            sceneBaseUrl = baseUrl || null;
+            scene = parseVrIntoScene(emtpyScene(), text, materials);
+            if (startOverride && Array.isArray(startOverride) && startOverride.length === 3) {
+                cam.yaw = 0; cam.pitch = 0;
+                cam.pos = [startOverride[0], (startOverride[1] + 1.8), startOverride[2]];
+            } else {
+                resetCamera();
+            }
+            uploadSceneMeshes(scene);
+            populateGatewaySelect();
+        } catch (e) {
+            console.error('Failed parsing scene:', e);
+            alert('Failed to parse .vr scene. See console for details.');
+        }
+    }
+    
+    async function loadVrFromUrl(inputUrl, startOverride) {
+        if (!inputUrl) return;
+        // Resolve possibly-relative URL against the current page location
+        let absUrl;
+        try {
+            absUrl = new URL(inputUrl, window.location.href).toString();
+        } catch (e) {
+            console.warn('Invalid URL:', inputUrl, e);
+            alert('Invalid URL');
+            return;
+        }
+        try {
+            const resp = await fetch(absUrl, { mode: 'cors' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const text = await resp.text();
+            // Use the final response URL as base in case of redirects
+            const finalUrl = resp.url || absUrl;
+            const base = new URL('.', finalUrl).toString();
+            setSceneFromText(text, base, startOverride);
+            // reflect into location bar without reloading
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('src', inputUrl);
+                window.history.replaceState({}, '', u.toString());
+                if (urlInput) urlInput.value = inputUrl;
+            } catch (e) { /* ignore */ }
+        } catch (e) {
+            console.error('Failed to load URL:', inputUrl, e);
+            alert(`Failed to load URL: ${inputUrl}\n${e}`);
+        }
+    }
+
+    // Resolve gateway targets to URLs per rules:
+    // - If target looks like absolute URL, use as-is
+    // - Else treat as relative to sceneBaseUrl (or page URL). If no file extension, append .vr
+    function resolveGatewayTarget(target) {
+        if (!target) return null;
+        const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(target);
+        let name = target;
+        // Append .vr if relative and no extension
+        if (!hasScheme && !/\.[a-zA-Z0-9]{1,6}(?:$|[?#])/.test(name)) {
+            name = name + '.vr';
+        }
+        try {
+            const base = sceneBaseUrl || (new URL('.', window.location.href).toString());
+            const abs = new URL(name, base).toString();
+            return abs;
+        } catch (e) {
+            try { return new URL(name).toString(); } catch { return null; }
+        }
+    }
+
+    function collectGatewaysFromObject(obj, list, parentTransform) {
+        if (!obj) return;
+        if (obj.gateways && Array.isArray(obj.gateways)) {
+            for (const gw of obj.gateways) {
+                const resolved = resolveGatewayTarget(gw.target);
+                list.push({ target: gw.target, resolvedUrl: resolved, start: gw.start, objectName: obj.name || '' });
+            }
+        }
+        if (obj.children) {
+            for (const ch of obj.children) collectGatewaysFromObject(ch, list, parentTransform);
+        }
+    }
+
+    function populateGatewaySelect() {
+        if (!gatewaySelect) return;
+        // Clear
+        while (gatewaySelect.firstChild) gatewaySelect.removeChild(gatewaySelect.firstChild);
+        const none = document.createElement('option');
+        none.value = ''; none.textContent = '(none)';
+        gatewaySelect.appendChild(none);
+        const list = [];
+        if (scene && Array.isArray(scene.objects)) {
+            for (const o of scene.objects) collectGatewaysFromObject(o, list, null);
+        }
+        list.forEach((g, idx) => {
+            const opt = document.createElement('option');
+            const label = `${g.objectName ? g.objectName + ' → ' : ''}${g.target}`;
+            opt.value = String(idx);
+            opt.textContent = label;
+            opt.dataset.url = g.resolvedUrl || '';
+            opt.dataset.start = JSON.stringify(g.start || [0,0,0]);
+            gatewaySelect.appendChild(opt);
+        });
+        gatewaySelect.dataset.count = String(list.length);
+        // store list for later retrieval
+        gatewaySelect._gwList = list;
+    }
+
+    async function enterSelectedGateway() {
+        if (!gatewaySelect || !gatewaySelect._gwList) return;
+        const sel = gatewaySelect.value;
+        if (!sel) return;
+        const idx = parseInt(sel, 10);
+        const entry = gatewaySelect._gwList[idx];
+        if (!entry || !entry.resolvedUrl) { alert('Invalid gateway selection'); return; }
+        await loadVrFromUrl(entry.resolvedUrl, entry.start);
+    }
 
     // Camera
     // Camera: add 1.8m Y offset to simulate eye height above ground
@@ -440,6 +647,16 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
 
         window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
         window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+        // Quick gateway enter: press 'g' to enter the first gateway if available
+        window.addEventListener('keydown', e => {
+            if (e.key.toLowerCase() === 'g') {
+                if (gatewaySelect && gatewaySelect._gwList && gatewaySelect._gwList.length > 0) {
+                    gatewaySelect.value = '0';
+                    enterSelectedGateway();
+                }
+            }
+        });
 
         // Pointer lock (mouselook) when available. Click the canvas to lock the pointer.
         const plSupported = !!(canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock);
@@ -527,6 +744,28 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         resize();
         const dt = Math.min(0.1, (t - lastT) / 1000 || 0); lastT = t;
         updateCamera(dt);
+        // After movement, test for entering any gateway trigger volumes
+        if (t >= gatewayCooldownUntil) {
+            for (let i = 0; i < gatewayTriggers.length; i++) {
+                const g = gatewayTriggers[i];
+                const dx = cam.pos[0] - g.center[0];
+                const dy = cam.pos[1] - g.center[1];
+                const dz = cam.pos[2] - g.center[2];
+                const inside = (dx*dx + dy*dy + dz*dz) <= (g.radius * g.radius);
+                const wasInside = gatewayInside.has(i);
+                if (inside && !wasInside) {
+                    // Enter gateway
+                    gatewayCooldownUntil = t + 1000; // 1s cooldown in ms
+                    if (g.resolvedUrl) {
+                        loadVrFromUrl(g.resolvedUrl, g.start);
+                    }
+                    gatewayInside.add(i);
+                    break; // handle one per frame
+                } else if (!inside && wasInside) {
+                    gatewayInside.delete(i);
+                }
+            }
+        }
 
         gl.clearColor(scene.world.background[0], scene.world.background[1], scene.world.background[2], 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -694,31 +933,73 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         if (!f) return;
         const reader = new FileReader();
         reader.onload = ev => {
-            scene = parseVrIntoScene(emtpyScene(), ev.target.result, materials);
-            resetCamera(); // reposition to start and reset yaw/pitch on new world
-            // upload meshes parsed from the scene into GPU buffers
-            try { uploadSceneMeshes(scene); } catch (e) { console.warn('uploadSceneMeshes failed', e); }
+            // No reliable base path for local files; keep null to avoid leaking local paths
+            sceneBaseUrl = null;
+            setSceneFromText(ev.target.result, null);
+            // Clean any src parameter from the URL when loading local files
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.delete('src'); u.searchParams.delete('vr');
+                window.history.replaceState({}, '', u.toString());
+                if (urlInput) urlInput.value = '';
+            } catch (e) { /* ignore */ }
         };
         reader.readAsText(f);
     });
+
+    // URL input events
+    if (loadUrlBtn) {
+        loadUrlBtn.addEventListener('click', () => {
+            const val = (urlInput && urlInput.value) ? urlInput.value.trim() : '';
+            if (val) loadVrFromUrl(val);
+        });
+    }
+    if (urlInput) {
+        urlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const val = urlInput.value.trim();
+                if (val) loadVrFromUrl(val);
+            }
+        });
+    }
+
+    if (enterGatewayBtn) {
+        enterGatewayBtn.addEventListener('click', () => { enterSelectedGateway(); });
+    }
+    if (gatewaySelect) {
+        gatewaySelect.addEventListener('dblclick', () => { enterSelectedGateway(); });
+    }
 
     // Initialize and start render loop
     function startup() {
         initGL();
         uploadGeometry();
-        bindControls();
+    bindControls();
         resize();
 
         resetCamera(); // ensure initial camera matches world start with neutral orientation
 
-        // Load materials
+        // Load materials, then attempt autoload from query param if present
         fetch('materials.json')
             .then(response => response.json())
             .then(data => {
                 materials = data;
                 console.log('Materials loaded:', materials);
             })
-            .catch(error => console.error('Error loading materials:', error));
+            .catch(error => console.error('Error loading materials:', error))
+            .finally(() => {
+                // Autoload from query param
+                try {
+                    const u = new URL(window.location.href);
+                    const src = u.searchParams.get('src') || u.searchParams.get('vr');
+                    if (src) {
+                        if (urlInput) urlInput.value = src;
+                        loadVrFromUrl(src);
+                    }
+                } catch (e) { /* ignore */ }
+                // Populate gateways for initial blank scene (none)
+                populateGatewaySelect();
+            });
 
         requestAnimationFrame(frame);
     }

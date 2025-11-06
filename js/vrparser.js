@@ -628,6 +628,23 @@ class Parser {
                     }
                     continue;
                 }
+                if (id === 'gateway') {
+                    // gateway "WORLD_NAME" v X Y Z
+                    if (this.peek().type === 'string') {
+                        const target = this.next().value;
+                        try {
+                            const start = this.parseVector();
+                            obj.gateways = obj.gateways || [];
+                            obj.gateways.push({ target, start });
+                        } catch (e) {
+                            console.warn('gateway parse error:', e && e.message);
+                        }
+                    } else {
+                        console.warn('gateway: expected target string, got', this.peek());
+                        this.skipValue();
+                    }
+                    continue;
+                }
                 if (id === 'texture') {
                     if (this.peek().type === 'string') {
                         obj.textures.push(this.next().value);
@@ -779,7 +796,9 @@ class Parser {
         }
         const indices = [];
         for (let i = 1; i < count - 1; i++) indices.push(0, i, i + 1);
-        const view = { type: 'mesh', positions, indices, material_index, texture_index };
+    const view = { type: 'mesh', positions, indices, material_index, texture_index };
+    // Mark origin so viewer can treat it specially (e.g., gateway triggers)
+    view.source = 'N_POLY';
         if (view_index !== null) view.view_index = view_index;
         if (hasTex && texcoords.length === count * 2) view.texcoords = texcoords;
         if (parentObject) {
@@ -1068,4 +1087,22 @@ export function parseVrIntoScene(theScene, text, materials = {}) {
         if (obj.materials.length === 0) obj.materials.push({ name:'GRAY', diffuse: defaultGray });
     }
     return theScene;
+}
+
+// Export an emtpyScene factory (intentionally spelled) for tests and external callers.
+// Mirrors the structure expected by viewer.js and test scripts.
+export function emtpyScene() {
+    return {
+        world: {
+            start: [0, 0, 0],
+            info: '',
+            background: [0.25, 0.25, 0.25],
+            fog: 0.0,
+            terrain: '',
+            color: [1.0, 1.0, 1.0],
+            ambient: [0.6, 0.6, 0.6],
+            position: [-3.0, 2.0, -1.0],
+        },
+        objects: [],
+    };
 }

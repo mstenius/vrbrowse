@@ -12,6 +12,10 @@
     <h1>vrbrowse — .vr viewer (minimal)</h1>
     <div class="controls">
       <label>Open .vr file: <input id="fileInput" type="file" accept=".vr,.txt"/></label>
+      <label style="margin-left:1rem;">Load by URL: <input id="urlInput" type="text" size="40" placeholder="https://example.com/world.vr" /></label>
+      <button id="loadUrlBtn" type="button">Load</button>
+  <label style="margin-left:1rem;">Gateways: <select id="gatewaySelect"><option value="">(none)</option></select></label>
+  <button id="enterGatewayBtn" type="button">Enter</button>
       <span class="hint">WASD to move, Q/E up/down, mouse drag to look</span>
     </div>
   </header>
