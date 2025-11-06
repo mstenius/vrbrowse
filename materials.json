@@ -48,7 +48,7 @@
     "GAINSBORO": { "diffuse": [0.86, 0.86, 0.86], "ambient": [0.17, 0.17, 0.17], "specular": [0.6, 0.6, 0.6], "spec_power": 0.1, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "GHOST_WHITE": { "diffuse": [0.97, 0.97, 1.0], "ambient": [0.19, 0.19, 0.2], "specular": [0.9, 0.9, 0.9], "spec_power": 0.1, "emission": [0.0, 0.0, 0.0], "transparency": 0.2 },
     "GOLD": { "diffuse": [1.0, 0.84, 0.0], "ambient": [0.3, 0.25, 0.0], "specular": [0.8, 0.7, 0.2], "spec_power": 0.6, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
-    "GOLDENROD": { "diffuse": [0.85, 0.65, 0.13], "ambient": [0.17, 0.13, 0.03], "specular": [0.8, 0.7, 0.3], "spec_power": 0.5, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
+    "GOLDENROD": { "diffuse": [0.85, 0.65, 0.13], "ambient": [0.85, 0.65, 0.13], "specular": [0.8, 0.7, 0.3], "spec_power": 0.5, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "GRAY": { "diffuse": [0.5, 0.5, 0.5], "ambient": [0.1, 0.1, 0.1], "specular": [0.4, 0.4, 0.4], "spec_power": 0.1, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "GREEN": { "diffuse": [0.0, 1.0, 0.0], "ambient": [0.0, 0.2, 0.0], "specular": [0.6, 0.7, 0.6], "spec_power": 0.25, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "GREEN_YELLOW": { "diffuse": [0.68, 1.0, 0.18], "ambient": [0.14, 0.2, 0.04], "specular": [0.7, 0.9, 0.5], "spec_power": 0.25, "emission": [0.1, 0.1, 0.0], "transparency": 0.0 },

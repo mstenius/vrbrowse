@@ -303,6 +303,67 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                     } else if (view.type === 'cylinder') {
                         // Store cylinder views
                         sceneGpuMeshes.push({ kind: 'cylinder', center: view.center, rx: view.rx, ry: view.ry, height: view.height, material: view.material || null, transform: worldTransform });
+                    } else if (view.type === 'quad_grid') {
+                        // QUAD_GRID: four corners given as polygon order p0,p1,p2,p3
+                        // Generate exactly nx (u-direction) and ny (v-direction) lines using bilinear interpolation.
+                        const nxLines = Math.max(0, view.nx | 0);
+                        const nyLines = Math.max(0, view.ny | 0);
+                        if (nxLines === 0 && nyLines === 0) continue;
+                        const [p0, p1, p2, p3] = view.corners;
+
+                        function bilinear(u, v) {
+                            const w0 = (1 - u) * (1 - v);
+                            const w1 = u * (1 - v);
+                            const w2 = u * v;
+                            const w3 = (1 - u) * v;
+                            return [
+                                w0 * p0[0] + w1 * p1[0] + w2 * p2[0] + w3 * p3[0],
+                                w0 * p0[1] + w1 * p1[1] + w2 * p2[1] + w3 * p3[1],
+                                w0 * p0[2] + w1 * p1[2] + w2 * p2[2] + w3 * p3[2]
+                            ];
+                        }
+
+                        const positions = [];
+                        const indices = [];
+                        let vertIdx = 0;
+
+                        // Lines of constant v (vary u)
+                        for (let j = 0; j < nyLines; j++) {
+                            const v = (nyLines === 1) ? 0.5 : (j / (nyLines - 1));
+                            const start = bilinear(0.0, v);
+                            const end = bilinear(1.0, v);
+                            positions.push(start[0], start[1], start[2], end[0], end[1], end[2]);
+                            indices.push(vertIdx, vertIdx + 1);
+                            vertIdx += 2;
+                        }
+
+                        // Lines of constant u (vary v)
+                        for (let i = 0; i < nxLines; i++) {
+                            const u = (nxLines === 1) ? 0.5 : (i / (nxLines - 1));
+                            const start = bilinear(u, 0.0);
+                            const end = bilinear(u, 1.0);
+                            positions.push(start[0], start[1], start[2], end[0], end[1], end[2]);
+                            indices.push(vertIdx, vertIdx + 1);
+                            vertIdx += 2;
+                        }
+
+                        const positionsArr = new Float32Array(positions);
+                        const indicesArr = new Uint16Array(indices);
+                        const normalsArr = new Float32Array(positionsArr.length); // dummy normals
+
+                        const vboPos = createBuffer(gl, positionsArr, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
+                        const vboNorm = createBuffer(gl, normalsArr, gl.ARRAY_BUFFER, gl.STATIC_DRAW);
+                        const ibo = createBuffer(gl, indicesArr, gl.ELEMENT_ARRAY_BUFFER, gl.STATIC_DRAW);
+
+                        sceneGpuMeshes.push({
+                            kind: 'lines',
+                            vboPos,
+                            vboNorm,
+                            ibo,
+                            indexCount: indicesArr.length,
+                            material: view.material || null,
+                            transform: worldTransform
+                        });
                     }
                 }
             }

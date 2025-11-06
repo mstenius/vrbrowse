@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>vrbrowse — minimal .vr viewer</title>
   <link rel="stylesheet" href="css/style.css" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    main {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+    }
+    #glcanvas {
+      flex: 1 1 auto;
+      width: 100vw;
+      height: 100%;
+      display: block;
+    }
+  </style>
 </head>
 <body>
   <header>
@@ -18,10 +42,6 @@
   <main>
     <canvas id="glcanvas"></canvas>
   </main>
-
-  <footer>
-    <small>Supports: world background/start and view RBOX primitives.</small>
-  </footer>
 
   <script type="module" src="js/viewer.js"></script>
 </body>

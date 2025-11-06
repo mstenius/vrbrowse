@@ -170,8 +170,8 @@ class Parser {
             while (true) {
                 const u = this.next();
                 if (!u || u.type === 'EOF') return;
-                if (u.type === '{') depth++;
-                else if (u.type === '}') {
+                if (u.type === '{' || u.type === '(') depth++;
+                else if (u.type === '}' || u.type === ')') {
                     if (depth === 0) {
                         return;
                     }
@@ -714,41 +714,28 @@ class Parser {
 
     // parse QUAD_GRID NX NY v p0 v p1 v p2 v p3
     parseQuadGrid(scene, parentObject, material_index, texture_index, view_index = null) {
-        // expect two ints
-        const nxTok = this.expect('number'); const nyTok = this.expect('number');
-        const nx = nxTok.value | 0; const ny = nyTok.value | 0;
-        // four corner positions (each may be prefixed by 'v')
-        const pts = [];
+        // NX, NY are the number of lines in each direction (not cells)
+        const nxTok = this.expect('number');
+        const nyTok = this.expect('number');
+        const nx = nxTok.value | 0;
+        const ny = nyTok.value | 0;
+
+        // Corner order: p0, p1, p2, p3
+        const corners = [];
         for (let i = 0; i < 4; i++) {
-            pts.push(this.parseVector());
+            corners.push(this.parseVector());
         }
-        // generate grid vertices and indices (triangles)
-        const positions = [];
-        const indices = [];
-        for (let iy = 0; iy < ny; iy++) {
-            const ty = ny === 1 ? 0.5 : iy / (ny - 1);
-            for (let ix = 0; ix < nx; ix++) {
-                const tx = nx === 1 ? 0.5 : ix / (nx - 1);
-                // bilinear interpolate among pts: p0 (0,0), p1 (0,1), p2 (1,0), p3 (1,1)
-                const x = (1 - tx) * (1 - ty) * pts[0][0] + (1 - tx) * ty * pts[1][0] + tx * (1 - ty) * pts[2][0] + tx * ty * pts[3][0];
-                const y = (1 - tx) * (1 - ty) * pts[0][1] + (1 - tx) * ty * pts[1][1] + tx * (1 - ty) * pts[2][1] + tx * ty * pts[3][1];
-                const z = (1 - tx) * (1 - ty) * pts[0][2] + (1 - tx) * ty * pts[1][2] + tx * (1 - ty) * pts[2][2] + tx * ty * pts[3][2];
-                positions.push(x, y, z);
-            }
-        }
-        for (let iy = 0; iy < ny - 1; iy++) {
-            for (let ix = 0; ix < nx - 1; ix++) {
-                const i0 = iy * nx + ix;
-                const i1 = i0 + 1;
-                const i2 = i0 + nx;
-                const i3 = i2 + 1;
-                // two triangles per quad
-                indices.push(i0, i2, i1);
-                indices.push(i1, i2, i3);
-            }
-        }
-        const view = { type: 'mesh', positions, indices, material_index, texture_index };
+
+        const view = { type: 'quad_grid', nx, ny, corners, material_index, texture_index };
         if (view_index !== null) view.view_index = view_index;
+
+        // Attach resolved material if available from parent
+        if (parentObject && parentObject.materials && parentObject.materials.length > 0) {
+            view.material = (material_index !== null && parentObject.materials[material_index])
+                ? parentObject.materials[material_index]
+                : parentObject.materials[0];
+        }
+
         if (parentObject) {
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
@@ -757,67 +744,48 @@ class Parser {
 
     // parse N_POLY N v x y z [t u v] ...
     parseNPoly(scene, parentObject, material_index, texture_index, view_index = null) {
-        // expect count
         const countTok = this.expect('number');
         const count = countTok.value | 0;
-        if (count < 3) {
-            console.warn('N_POLY: need at least 3 vertices, got', count);
-            return;
-        }
-        
+        if (count < 3) { console.warn('N_POLY: need >=3 vertices'); return; }
         const positions = [];
         const texcoords = [];
-        let hasTexcoords = false;
-        
-        // read N vertices
+        let hasTex = false;
         for (let i = 0; i < count; i++) {
-            // expect 'v' x y z
-            const pos = this.parseVector();
-            positions.push(pos[0], pos[1], pos[2]);
-            
-            // optional 't' u v
+            const v = this.parseVector();
+            positions.push(v[0], v[1], v[2]);
             if (this.peekIs('ident', 't')) {
-                this.next(); // consume 't'
+                this.next();
                 const u = this.expect('number').value;
-                const v = this.expect('number').value;
-                texcoords.push(u, v);
-                hasTexcoords = true;
-            } else if (hasTexcoords) {
-                // if previous vertices had texcoords, add default for consistency
+                const vv = this.expect('number').value;
+                texcoords.push(u, vv);
+                hasTex = true;
+            } else if (hasTex) {
                 texcoords.push(0, 0);
             }
         }
-        
-        // triangulate the polygon using a simple fan from vertex 0
         const indices = [];
-        for (let i = 1; i < count - 1; i++) {
-            indices.push(0, i, i + 1);
-        }
-        
+        for (let i = 1; i < count - 1; i++) indices.push(0, i, i + 1);
         const view = { type: 'mesh', positions, indices, material_index, texture_index };
         if (view_index !== null) view.view_index = view_index;
-        if (hasTexcoords && texcoords.length === (count * 2)) {
-            view.texcoords = texcoords;
-        }
+        if (hasTex && texcoords.length === count * 2) view.texcoords = texcoords;
         if (parentObject) {
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
         }
     }
 
-    // parse N_LINE / LINE primitives inside a view
+    // parse LINE / N_LINE
     parseLinePrimitive(scene, kind, parentObject, material_index, texture_index, view_index = null) {
-        // If kind == 'N_LINE' the next token may be a count
         let count = null;
-        if (kind === 'N_LINE' && this.peek().type === 'number') { count = this.next().value | 0; }
+        if (kind === 'N_LINE' && this.peek().type === 'number') count = this.next().value | 0;
         const verts = [];
-        // read vectors until '}' or until count reached
         while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
-            if (this.peekIs('ident', 'v')) { try { const v = this.parseVector(); verts.push(...v); } catch (e) { break; } }
-            else break;
-            if (count !== null && verts.length / 3 >= count) break;
+            if (this.peekIs('ident', 'v')) {
+                const v = this.parseVector();
+                verts.push(...v);
+                if (count !== null && verts.length / 3 >= count) break;
+            } else break;
         }
-        // build line indices: consecutive segments
         const indices = [];
         const vcount = verts.length / 3;
         for (let i = 0; i < vcount - 1; i++) indices.push(i, i + 1);
@@ -829,13 +797,13 @@ class Parser {
         }
     }
 
-    // parse indexed_poly { ... } minimal support: vertexlist & polylist
+    // parse indexed_poly (minimal support)
     parseIndexedPoly(scene, material_index, texture_index, parentObject, view_index = null) {
-        // parseIndexedPoly entered
-        // after 'indexed_poly' we expect prim type and optional flags (skip them)
-        if (this.peek().type === 'ident') this.next(); // PRIM_TYPE
-        // skip any additional flags/numbers until we hit a known list keyword
-        while (this.peek().type === 'number' || (this.peek().type === 'ident' && !['vertexlist', 'normallist', 'texturelist', 'polylist', 'normalindexlist', 'textureindexlist', 'materiallist', 'colourlist'].includes(this.peek().value.toLowerCase()))) {
+        if (this.peek().type === 'ident') this.next(); // prim type
+        while (this.peek().type === 'number' ||
+               (this.peek().type === 'ident' &&
+                !['vertexlist','normallist','texturelist','polylist','normalindexlist','textureindexlist','materiallist','colourlist']
+                    .includes(this.peek().value.toLowerCase()))) {
             this.next();
         }
         const vertices = [];
@@ -848,41 +816,31 @@ class Parser {
             if (this.peek().type === 'ident') {
                 const id = this.next().value.toLowerCase();
                 if (id === 'vertexlist') {
-                    // expect '{'
                     this.expect('{');
-                    // read triples until '}'
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
-                        const t = this.peek();
-                        if (t.type === 'number') {
+                        if (this.peek().type === 'number') {
                             const x = this.next().value;
                             const y = this.expect('number').value;
                             const z = this.expect('number').value;
-                            // optional comma
                             if (this.peek().type === ',') this.next();
                             vertices.push(x, y, z);
-                            continue;
-                        }
-                        // skip unexpected tokens
-                        this.next();
+                        } else this.next();
                     }
                     this.expect('}');
                     continue;
                 }
                 if (id === 'polylist') {
                     this.expect('{');
-                    // polylist: sequences of ints terminated by -1; commas optional
                     let current = [];
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                         const t = this.next();
                         if (t.type === 'number') {
                             const v = t.value | 0;
-                            if (v === -1) { if (current.length > 0) { polylist.push(current); current = []; } }
-                            else current.push(v);
-                            // consume optional comma
+                            if (v === -1) {
+                                if (current.length > 0) { polylist.push(current); current = []; }
+                            } else current.push(v);
                             if (this.peek().type === ',') this.next();
-                            continue;
                         }
-                        // skip
                     }
                     if (current.length > 0) polylist.push(current);
                     this.expect('}');
@@ -892,138 +850,122 @@ class Parser {
                     this.expect('{');
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                         if (this.peek().type === 'number') {
-                            const nx = this.next().value; const ny = this.expect('number').value; const nz = this.expect('number').value;
+                            const nx = this.next().value;
+                            const ny = this.expect('number').value;
+                            const nz = this.expect('number').value;
                             if (this.peek().type === ',') this.next();
-                            normallist.push([nx, ny, nz]); continue;
-                        }
-                        this.next();
+                            normallist.push([nx, ny, nz]);
+                        } else this.next();
                     }
-                    this.expect('}'); continue;
+                    this.expect('}');
+                    continue;
                 }
                 if (id === 'texturelist') {
                     this.expect('{');
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                         if (this.peek().type === 'number') {
-                            const u = this.next().value; const v = this.expect('number').value; if (this.peek().type === ',') this.next(); texturelist.push([u, v]); continue;
-                        }
-                        this.next();
+                            const u = this.next().value;
+                            const v = this.expect('number').value;
+                            if (this.peek().type === ',') this.next();
+                            texturelist.push([u, v]);
+                        } else this.next();
                     }
-                    this.expect('}'); continue;
+                    this.expect('}');
+                    continue;
                 }
                 if (id === 'normalindexlist') {
                     this.expect('{');
-                    let current = [];
+                    let cur = [];
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                         const t = this.next();
                         if (t.type === 'number') {
                             const v = t.value | 0;
-                            if (v === -1) { if (current.length > 0) { normalindexlist.push(current); current = []; } }
-                            else current.push(v);
+                            if (v === -1) { if (cur.length) { normalindexlist.push(cur); cur = []; } }
+                            else cur.push(v);
                             if (this.peek().type === ',') this.next();
-                            continue;
                         }
                     }
-                    if (current.length > 0) normalindexlist.push(current);
-                    this.expect('}'); continue;
+                    if (cur.length) normalindexlist.push(cur);
+                    this.expect('}');
+                    continue;
                 }
                 if (id === 'textureindexlist') {
                     this.expect('{');
-                    let current = [];
+                    let cur = [];
                     while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
                         const t = this.next();
                         if (t.type === 'number') {
                             const v = t.value | 0;
-                            if (v === -1) { if (current.length > 0) { textureindexlist.push(current); current = []; } }
-                            else current.push(v);
+                            if (v === -1) { if (cur.length) { textureindexlist.push(cur); cur = []; } }
+                            else cur.push(v);
                             if (this.peek().type === ',') this.next();
-                            continue;
                         }
                     }
-                    if (current.length > 0) textureindexlist.push(current);
-                    this.expect('}'); continue;
+                    if (cur.length) textureindexlist.push(cur);
+                    this.expect('}');
+                    continue;
                 }
-                // skip other lists for now
-                if (this.peek().type === '{') { this.skipBlock(false); continue; }
+                if (this.peek().type === '{') { this.skipBlock(); continue; }
                 this.skipValue();
-            } else {
-                this.next();
-            }
+            } else this.next();
         }
-        // Don't consume closing brace - that belongs to the view block
 
-        // Helper: compute polygon normal via Newell's method
         const computeNormalNewell = (pts) => {
-            let nx = 0, ny = 0, nz = 0;
-            const n = pts.length;
+            let nx = 0, ny = 0, nz = 0; const n = pts.length;
             for (let i = 0; i < n; i++) {
-                const [x1, y1, z1] = pts[i];
-                const [x2, y2, z2] = pts[(i + 1) % n];
-                nx += (y1 - y2) * (z1 + z2);
-                ny += (z1 - z2) * (x1 + x2);
-                nz += (x1 - x2) * (y1 + y2);
+                const [x1,y1,z1] = pts[i];
+                const [x2,y2,z2] = pts[(i+1)%n];
+                nx += (y1 - y2)*(z1 + z2);
+                ny += (z1 - z2)*(x1 + x2);
+                nz += (x1 - x2)*(y1 + y2);
             }
-            const len = Math.hypot(nx, ny, nz) || 1; return [nx / len, ny / len, nz / len];
+            const l = Math.hypot(nx, ny, nz) || 1;
+            return [nx/l, ny/l, nz/l];
         };
 
-        // Helper: ear-clipping triangulation for a polygon given array of 3D points
         const triangulateEarClip = (polyPts) => {
             const n = polyPts.length;
             if (n < 3) return [];
-            // Project to 2D plane by dropping the largest normal component
             const normal = computeNormalNewell(polyPts);
             const ax = Math.abs(normal[0]), ay = Math.abs(normal[1]), az = Math.abs(normal[2]);
-            let projection = 'xy';
-            if (ax > ay && ax > az) projection = 'yz';
-            else if (ay > az && ay > ax) projection = 'xz';
-
-            const proj = (p) => {
-                if (projection === 'xy') return [p[0], p[1]];
-                if (projection === 'yz') return [p[1], p[2]];
-                return [p[0], p[2]];
-            };
-
+            let projMode = 'xy';
+            if (ax > ay && ax > az) projMode = 'yz';
+            else if (ay > az && ay > ax) projMode = 'xz';
+            const proj = p => projMode === 'xy' ? [p[0],p[1]] : projMode === 'yz' ? [p[1],p[2]] : [p[0],p[2]];
             const v2 = polyPts.map(proj);
-            const V = [];
-            for (let i = 0; i < n; i++) V.push(i);
-
-            const area2 = (a, b, c) => ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
-            const isEar = (i0, i1, i2) => {
-                const a = v2[i0], b = v2[i1], c = v2[i2];
-                if (area2(a, b, c) <= 1e-8) return false;
-                // check no other point is inside triangle
-                for (const j of V) {
-                    if (j === i0 || j === i1 || j === i2) continue;
-                    const p = v2[j];
-                    // barycentric / point-in-triangle
-                    const A = area2(a, b, c);
-                    const A1 = area2(p, b, c), A2 = area2(a, p, c), A3 = area2(a, b, p);
-                    if (A1 >= -1e-9 && A2 >= -1e-9 && A3 >= -1e-9 && Math.abs(A1 + A2 + A3 - A) < 1e-6) return false;
+            const V = []; for (let i=0;i<n;i++) V.push(i);
+            const area2 = (a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+            const isEar = (i0,i1,i2)=>{
+                const a=v2[i0],b=v2[i1],c=v2[i2];
+                if (area2(a,b,c)<=1e-8) return false;
+                for (const j of V){
+                    if (j===i0||j===i1||j===i2) continue;
+                    const p=v2[j]; const A=area2(a,b,c);
+                    const A1=area2(p,b,c),A2=area2(a,p,c),A3=area2(a,b,p);
+                    if (A1>=-1e-9&&A2>=-1e-9&&A3>=-1e-9&&Math.abs(A1+A2+A3-A)<1e-6) return false;
                 }
                 return true;
             };
-
-            const triangles = [];
-            let safety = 0;
-            while (V.length > 3 && safety++ < 10000) {
-                let clipped = false;
-                for (let i = 0; i < V.length; i++) {
-                    const i0 = V[(i - 1 + V.length) % V.length];
-                    const i1 = V[i];
-                    const i2 = V[(i + 1) % V.length];
-                    if (isEar(i0, i1, i2)) {
-                        triangles.push([i0, i1, i2]);
-                        V.splice(i, 1);
-                        clipped = true; break;
+            const tris=[];
+            let safety=0;
+            while(V.length>3&&safety++<10000){
+                let clipped=false;
+                for (let i=0;i<V.length;i++){
+                    const i0=V[(i-1+V.length)%V.length];
+                    const i1=V[i];
+                    const i2=V[(i+1)%V.length];
+                    if(isEar(i0,i1,i2)){
+                        tris.push([i0,i1,i2]);
+                        V.splice(i,1);
+                        clipped=true; break;
                     }
                 }
-                if (!clipped) break; // give up
+                if(!clipped) break;
             }
-            if (V.length === 3) triangles.push([V[0], V[1], V[2]]);
-            // triangles are indices into original polygon array
-            return triangles;
+            if(V.length===3) tris.push([V[0],V[1],V[2]]);
+            return tris;
         };
 
-        // Build expanded vertex arrays (positions, normals, texcoords) by triangulating each poly
         const outPositions = [];
         const outNormals = [];
         const outTexcoords = [];
@@ -1033,28 +975,26 @@ class Parser {
         for (let faceIdx = 0; faceIdx < polylist.length; faceIdx++) {
             const poly = polylist[faceIdx];
             if (!poly || poly.length < 3) continue;
-            const polyPts = poly.map(i => [vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2]]);
+            const polyPts = poly.map(i => [vertices[i*3], vertices[i*3+1], vertices[i*3+2]]);
             const tris = triangulateEarClip(polyPts);
             for (const tri of tris) {
-                // tri contains indices into poly (local indices)
                 for (let k = 0; k < 3; k++) {
                     const localIdx = tri[k];
                     const vertIdx = poly[localIdx];
-                    // position
-                    outPositions.push(vertices[vertIdx * 3], vertices[vertIdx * 3 + 1], vertices[vertIdx * 3 + 2]);
-                    // normal: try normalindexlist -> normallist
-                    let nx = 0, ny = 0, nz = 0;
-                    if (normalindexlist && normalindexlist[faceIdx] && normalindexlist[faceIdx][localIdx] !== undefined) {
+                    outPositions.push(vertices[vertIdx*3], vertices[vertIdx*3+1], vertices[vertIdx*3+2]);
+                    let nx=0,ny=0,nz=0;
+                    if (normalindexlist[faceIdx] && normalindexlist[faceIdx][localIdx] !== undefined) {
                         const ni = normalindexlist[faceIdx][localIdx];
-                        if (normallist[ni]) { nx = normallist[ni][0]; ny = normallist[ni][1]; nz = normallist[ni][2]; }
-                    } else if (normallist && normallist[vertIdx]) { nx = normallist[vertIdx][0]; ny = normallist[vertIdx][1]; nz = normallist[vertIdx][2]; }
-                    outNormals.push(nx, ny, nz);
-                    // texcoord: similar
-                    if (textureindexlist && textureindexlist[faceIdx] && textureindexlist[faceIdx][localIdx] !== undefined) {
+                        if (normallist[ni]) [nx,ny,nz] = normallist[ni];
+                    } else if (normallist[vertIdx]) [nx,ny,nz] = normallist[vertIdx];
+                    outNormals.push(nx,ny,nz);
+                    if (textureindexlist[faceIdx] && textureindexlist[faceIdx][localIdx] !== undefined) {
                         const ti = textureindexlist[faceIdx][localIdx];
-                        const tt = texturelist[ti] || [0, 0]; outTexcoords.push(tt[0], tt[1]);
-                    } else if (texturelist && texturelist[vertIdx]) { outTexcoords.push(texturelist[vertIdx][0], texturelist[vertIdx][1]); }
-                    else { outTexcoords.push(0, 0); }
+                        const tt = texturelist[ti] || [0,0];
+                        outTexcoords.push(tt[0], tt[1]);
+                    } else if (texturelist[vertIdx]) {
+                        outTexcoords.push(texturelist[vertIdx][0], texturelist[vertIdx][1]);
+                    } else outTexcoords.push(0,0);
                     outIndices.push(nextIndex++);
                 }
             }
@@ -1062,84 +1002,56 @@ class Parser {
 
         const view = { type: 'mesh', positions: outPositions, indices: outIndices, material_index, texture_index };
         if (view_index !== null) view.view_index = view_index;
-        if (outNormals.some(v => v !== 0)) view.normals = outNormals;
-        if (outTexcoords.some(v => v !== 0)) view.texcoords = outTexcoords;
-        // resolve material/texture strings from parentObject if available
+        if (outNormals.some(v=>v!==0)) view.normals = outNormals;
+        if (outTexcoords.some(v=>v!==0)) view.texcoords = outTexcoords;
         if (parentObject) {
-            if (material_index !== null && parentObject.materials && parentObject.materials[material_index]) view.material = parentObject.materials[material_index];
-            if (texture_index !== null && parentObject.textures && parentObject.textures[texture_index]) view.texture = parentObject.textures[texture_index];
+            if (material_index !== null && parentObject.materials[material_index]) view.material = parentObject.materials[material_index];
+            if (texture_index !== null && parentObject.textures[texture_index]) view.texture = parentObject.textures[texture_index];
             parentObject.views = parentObject.views || [];
             parentObject.views.push(view);
         }
     }
 
-    // Top-level: handle known keywords, otherwise skip unknown blocks or tokens
+    // Top-level parse
     parseTopLevel(scene) {
         while (this.peek().type !== 'EOF') {
             const t = this.peek();
             if (t.type === 'ident') {
-                const kw = t.value;
-                // top-level identifier
-                // consume the identifier
+                const kw = t.value.toLowerCase();
                 this.next();
-                // object handling falls through to block parsing
-                if (kw.toLowerCase() === 'world') {
-                    try { this.parseWorld(scene); }
-                    catch (e) { console.warn('world parse error:', e.message); this.skipBlock(false); }
+                if (kw === 'world') {
+                    try { this.parseWorld(scene); } catch (e) { console.warn('world parse error:', e.message); this.skipBlock(); }
                     continue;
                 }
-                if (kw.toLowerCase() === 'object') {
-                    try { this.parseObject(scene); }
-                    catch (e) { console.warn('object parse error:', e && e.message); this.skipBlock(false); }
+                if (kw === 'object') {
+                    try { this.parseObject(scene); } catch (e) { console.warn('object parse error:', e.message); this.skipBlock(); }
                     continue;
                 }
-                // TODO: Add billboard, lod, switch, top-level inline
-
-                // unknown identifier:
-                // if followed by '{', skip the block, otherwise skip until semicolon
-                // Maybe later: Fail silently or warn?
-                if (this.peek().type === '{') {
-                    this.skipBlock(false); 
-                    continue;
-                }
-                while (this.peek().type !== ';' && this.peek().type !== 'EOF' && this.peek().type !== '}') {
-                    this.next(); 
-                }
+                if (this.peek().type === '{') { this.skipBlock(); continue; }
+                while (this.peek().type !== ';' && this.peek().type !== 'EOF' && this.peek().type !== '}') this.next();
                 this.accept(';');
-
             } else if (t.type === '{') {
-                // stray block
-                // Maybe later: Fail silently or warn?
-                this.skipBlock(false);
+                this.skipBlock();
             } else {
-                // punctuation or unexpected token, just consume
-                // Maybe later: Fail silently or warn?
                 this.next();
             }
         }
     }
 }
 
-// Public API
 export function parseVrIntoScene(theScene, text, materials = {}) {
     try {
         const tokens = tokenize(text);
         const parser = new Parser(tokens, materials);
         parser.parseTopLevel(theScene);
     } catch (e) {
-        // report fatal parse error to console.error (kept minimal)
         console.error('parseVrIntoScene: fatal parse error', e && e.message);
-        console.error('Stack:', e && e.stack);
     }
-
-    // Post-process parsed objects and ensure each object has at least one
-    // material: X11-like "GRAY" diffuse
     theScene.objects = theScene.objects || [];
-    const x11Gray = [128 / 255, 128 / 255, 128 / 255]; // #808080
+    const defaultGray = [128/255,128/255,128/255];
     for (const obj of theScene.objects) {
         obj.materials = obj.materials || [];
-        if (obj.materials.length === 0) obj.materials.push({ name: 'GRAY', diffuse: x11Gray });
+        if (obj.materials.length === 0) obj.materials.push({ name:'GRAY', diffuse: defaultGray });
     }
-
     return theScene;
 }
