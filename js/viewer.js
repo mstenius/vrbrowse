@@ -413,6 +413,18 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
     let dragging = false, lastMouse = [0, 0];
     let isPointerLocked = false;
 
+    // Reset camera to world start and clear orientation
+    // Note that we simulate eye height by adding 1.8m to Y.
+    // This is a simple approach and may not work well for all scenes,
+    // and should at some point be replaced by a more robust system.
+    function resetCamera() {
+        cam.yaw = 0;
+        cam.pitch = 0;
+        const start = (scene && scene.world && Array.isArray(scene.world.start)) ? scene.world.start : [0, 0, 0];
+        cam.pos = start.slice();
+        if (cam.pos.length >= 2) cam.pos[1] += 1.8;
+    }
+
     function onPointerMove(e) {
         const dx = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
         const dy = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
@@ -683,9 +695,7 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         const reader = new FileReader();
         reader.onload = ev => {
             scene = parseVrIntoScene(emtpyScene(), ev.target.result, materials);
-            cam.pos = scene.world.start.slice();
-            // Add 1.8m Y offset to camera position for eye height
-            if (cam.pos.length >= 2) cam.pos[1] += 1.8;
+            resetCamera(); // reposition to start and reset yaw/pitch on new world
             // upload meshes parsed from the scene into GPU buffers
             try { uploadSceneMeshes(scene); } catch (e) { console.warn('uploadSceneMeshes failed', e); }
         };
@@ -698,9 +708,8 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
         uploadGeometry();
         bindControls();
         resize();
-        cam.pos = scene.world.start.slice();
-        // Add 1.8m Y offset to camera position for eye height
-        if (cam.pos.length >= 2) cam.pos[1] += 1.8;
+
+        resetCamera(); // ensure initial camera matches world start with neutral orientation
 
         // Load materials
         fetch('materials.json')
