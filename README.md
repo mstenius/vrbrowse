@@ -47,6 +47,11 @@ Ongoing now:
 - Usability enhancements
 - Improving gateways
 
+Major features from the `.vr` not currently implemented include:
+
+- `Tcl` scripting
+- Preprocessor support (macros and includes)
+
 ## Running
 
 To run locally, either just load the files into a web browser that supports JavaScript and WebGL or
