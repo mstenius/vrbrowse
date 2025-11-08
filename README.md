@@ -57,6 +57,25 @@ Major features from the `.vr` not currently implemented include:
 To run locally, either just load the files into a web browser that supports JavaScript and WebGL or
 serve the files statically using your favourite web server and do the same.
 
+### Caching & Development Refresh
+
+During development you may edit `.vr` files or textures and want immediate reloads. This viewer
+currently actively disables caching for dynamic loads:
+
+- Fetches for worlds and `materials.json` add a timestamp (`?_ts=...`) and use `cache: 'no-store'`.
+- Texture URLs also receive a cache-busting query param.
+- `index.html` includes meta tags hinting at no-cache.
+
+If you still see stale data:
+
+1. Force-reload the page.
+2. Ensure your static server isn’t adding aggressive cache headers.
+3. Investigate any service workers or proxy layers.
+4. Verify the URL really changed (look for `_ts=` in network panel).
+
+For production (whatever that would mean with this experiment) one should probably
+consider removing the timestamp logic to allow normal browser caching.
+
 ## Samples
 
 There are several sample `.vr` files in `samples/`.

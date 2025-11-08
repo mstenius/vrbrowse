@@ -318,8 +318,11 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
                             img.onerror = () => { console.warn('Failed to load texture:', item.texturePath); };
                             // resolve relative paths against scene base URL if available
                             try {
-                                const resolved = sceneBaseUrl ? new URL(item.texturePath, sceneBaseUrl).toString() : item.texturePath;
-                                img.src = resolved;
+                                const base = sceneBaseUrl || window.location.href;
+                                const u = new URL(item.texturePath, base);
+                                // add cache buster to favor latest texture during dev
+                                u.searchParams.set('_ts', String(Date.now()));
+                                img.src = u.toString();
                             } catch (e) { console.warn('setting texture src failed', e); }
                         }
                         sceneGpuMeshes.push(item);
@@ -525,7 +528,10 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
             return;
         }
         try {
-            const resp = await fetch(absUrl, { mode: 'cors' });
+            // add a cache-busting query param and disable HTTP cache
+            const noCacheUrl = new URL(absUrl);
+            noCacheUrl.searchParams.set('_ts', String(Date.now()));
+            const resp = await fetch(noCacheUrl.toString(), { mode: 'cors', cache: 'no-store' });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const text = await resp.text();
             // Use the final response URL as base in case of redirects
@@ -979,8 +985,12 @@ import { createCube, createCylinder, createSphere, uploadMeshToGPU } from './geo
 
         resetCamera(); // ensure initial camera matches world start with neutral orientation
 
-        // Load materials, then attempt autoload from query param if present
-        fetch('materials.json')
+        // Load materials (disable cache), then attempt autoload from query param if present
+        (()=>{
+            const u = new URL('materials.json', window.location.href);
+            u.searchParams.set('_ts', String(Date.now()));
+            return fetch(u.toString(), { cache: 'no-store' });
+        })()
             .then(response => response.json())
             .then(data => {
                 materials = data;
