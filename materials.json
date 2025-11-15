@@ -163,7 +163,7 @@
     "TAN_M": { "diffuse": [0.82, 0.71, 0.55], "ambient": [0.16, 0.14, 0.11], "specular": [0.3, 0.2, 0.1], "spec_power": 0.05, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "TOWER_M": { "diffuse": [0.6, 0.6, 0.6], "ambient": [0.12, 0.12, 0.12], "specular": [0.5, 0.5, 0.5], "spec_power": 0.2, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "TOWER_M2": { "diffuse": [0.45, 0.45, 0.45], "ambient": [0.09, 0.09, 0.09], "specular": [0.4, 0.4, 0.4], "spec_power": 0.15, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
-    "WHEAT_M": { "diffuse": [0.96, 0.87, 0.7], "ambient": [0.19, 0.17, 0.14], "specular": [0.2, 0.2, 0.1], "spec_power": 0.05, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
+    "WHEAT_M": { "diffuse": [0.96, 0.87, 0.7], "ambient": [0.42, 0.42, 0.37], "specular": [0.0, 0.0, 0.0], "spec_power": 0.00, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "WHITE_M": { "diffuse": [1.0, 1.0, 1.0], "ambient": [0.2, 0.2, 0.2], "specular": [0.9, 0.9, 0.9], "spec_power": 0.5, "emission": [0.0, 0.0, 0.0], "transparency": 0.0 },
     "YELLOW_M": { "diffuse": [1.0, 1.0, 0.0], "ambient": [0.2, 0.2, 0.0], "specular": [0.7, 0.7, 0.6], "spec_power": 0.25, "emission": [0.1, 0.1, 0.0], "transparency": 0.0 }
 }
